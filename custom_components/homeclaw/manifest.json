@@ -1,0 +1,12 @@
+{
+  "domain": "homeclaw",
+  "name": "Homeclaw",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://homeclaw.lan/docs",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.2.0"
+}

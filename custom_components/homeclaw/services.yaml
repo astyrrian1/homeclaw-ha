@@ -1,0 +1,37 @@
+submit_feedback:
+  fields:
+    kind:
+      required: true
+      selector: {text: {}}
+    resident_id:
+      required: true
+      selector: {text: {}}
+    target_id:
+      required: true
+      selector: {text: {}}
+    correction:
+      selector: {text: {multiline: true}}
+approve_proposal:
+  fields:
+    proposal_id:
+      required: true
+      selector: {text: {}}
+    approval_token:
+      selector: {text: {type: password}}
+reject_proposal:
+  fields:
+    proposal_id:
+      required: true
+      selector: {text: {}}
+run_digest:
+  fields:
+    resident_id:
+      selector: {text: {}}
+forget_memory:
+  fields:
+    scope:
+      required: true
+      selector: {text: {}}
+    owner_confirmation:
+      required: true
+      selector: {boolean: {}}

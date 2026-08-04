@@ -1,0 +1,20 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Homeclaw",
+        "data": {
+          "url": "Homeclaw URL",
+          "access_token": "API token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect",
+      "invalid_auth": "Invalid token"
+    },
+    "abort": {
+      "already_configured": "Homeclaw is already configured"
+    }
+  }
+}

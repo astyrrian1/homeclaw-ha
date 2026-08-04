@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 import voluptuous as vol
 from homeassistant.components import llm
 from homeassistant.core import HomeAssistant, callback
@@ -19,13 +21,13 @@ class SearchTimelineTool(llm.Tool):
     async def async_call(self, hass, tool_input: ToolInput, llm_context: LLMContext):
         del llm_context
         coordinator = next(iter(hass.data[DOMAIN].values()))
-        response = await coordinator.client.get(
-            f"/v1/timeline?limit={tool_input.tool_args['limit']}"
+        arguments = urlencode(
+            {
+                "query": tool_input.tool_args["query"],
+                "limit": tool_input.tool_args["limit"],
+            }
         )
-        query = tool_input.tool_args["query"].casefold()
-        return {
-            "items": [item for item in response.get("items", []) if query in str(item).casefold()]
-        }
+        return await coordinator.client.get(f"/v1/memory/search?{arguments}")
 
 
 class ExplainBeliefsTool(llm.Tool):

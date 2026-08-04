@@ -11,7 +11,8 @@
     },
     "error": {
       "cannot_connect": "Unable to connect",
-      "invalid_auth": "Invalid token"
+      "invalid_auth": "Invalid token",
+      "invalid_capability_mappings": "Capability mappings must be a valid JSON object"
     },
     "abort": {
       "already_configured": "Homeclaw is already configured"

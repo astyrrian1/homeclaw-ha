@@ -20,15 +20,20 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
-            status, timeline, insights, proposals = await asyncio.gather(
+            status, timeline, insights, proposals, notifications = await asyncio.gather(
                 self.client.get("/v1/status"),
                 self.client.get("/v1/timeline?limit=20"),
                 self.client.get("/v1/insights?limit=20"),
                 self.client.get("/v1/proposals?limit=20"),
+                self.client.get("/v1/notifications?limit=50"),
             )
         except Exception as exc:
             raise UpdateFailed(str(exc)) from exc
         events = [{"record_type": "insight", **item} for item in insights.get("items", [])] + [
             {"record_type": "action_proposal", **item} for item in proposals.get("items", [])
         ]
+        pending_notifications = [
+            {"record_type": "notification", **item} for item in notifications.get("items", [])
+        ]
+        events.extend(pending_notifications)
         return {**status, "timeline": timeline.get("items", []), "events": events}

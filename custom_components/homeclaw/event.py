@@ -10,6 +10,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         [
             HomeclawEvent(coordinator, "insight", "Insight", "insight"),
             HomeclawEvent(coordinator, "action_proposal", "Action proposal", "action_proposal"),
+            HomeclawEvent(coordinator, "notification", "Notification", "notification"),
         ]
     )
 
@@ -30,4 +31,9 @@ class HomeclawEvent(HomeclawEntity, EventEntity):
                 self._seen.add(item_id)
                 if self.hass is not None:
                     self._trigger_event("created", item)
+                    if self._record_type == "notification":
+                        self.hass.async_create_task(
+                            self.coordinator.client.post(f"/v1/notifications/{item_id}/ack"),
+                            f"acknowledge Homeclaw notification {item_id}",
+                        )
         super()._handle_coordinator_update()

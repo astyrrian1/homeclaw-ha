@@ -17,7 +17,11 @@ approve_proposal:
       required: true
       selector: {text: {}}
     approval_token:
+      required: true
       selector: {text: {type: password}}
+    resident_id:
+      required: true
+      selector: {text: {}}
 reject_proposal:
   fields:
     proposal_id:
@@ -31,7 +35,34 @@ forget_memory:
   fields:
     scope:
       required: true
-      selector: {text: {}}
+      selector:
+        select:
+          options:
+            - record
+            - resident
+            - before
+            - all
+    record_type:
+      required: false
+      selector:
+        text: {}
+    record_id:
+      required: false
+      selector:
+        text: {}
+    resident_id:
+      required: false
+      selector:
+        text: {}
+    before:
+      required: false
+      selector:
+        text: {}
     owner_confirmation:
       required: true
       selector: {boolean: {}}
+execute_capability:
+  fields:
+    request:
+      required: true
+      selector: {object: {}}

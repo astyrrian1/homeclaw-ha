@@ -33,6 +33,13 @@ class HomeclawClient:
             response.raise_for_status()
             return await response.json()
 
+    async def delete(self, path: str) -> dict[str, Any]:
+        async with self._session.delete(
+            f"{self._url}{path}", headers=self._headers, timeout=10
+        ) as response:
+            response.raise_for_status()
+            return await response.json()
+
     async def validate(self) -> None:
         try:
             await self.get("/v1/status")

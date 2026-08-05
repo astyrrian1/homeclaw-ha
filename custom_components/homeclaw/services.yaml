@@ -61,6 +61,106 @@ forget_memory:
     owner_confirmation:
       required: true
       selector: {boolean: {}}
+approve_memory:
+  fields:
+    candidate_id:
+      required: true
+      selector: {text: {}}
+    owner:
+      required: true
+      selector: {text: {}}
+    owner_confirmation:
+      required: true
+      selector: {boolean: {}}
+    reason:
+      selector: {text: {multiline: true}}
+reject_memory:
+  fields:
+    candidate_id:
+      required: true
+      selector: {text: {}}
+    owner:
+      required: true
+      selector: {text: {}}
+    owner_confirmation:
+      required: true
+      selector: {boolean: {}}
+    reason:
+      selector: {text: {multiline: true}}
+correct_memory:
+  fields:
+    claim_id:
+      required: true
+      selector: {text: {}}
+    owner:
+      required: true
+      selector: {text: {}}
+    owner_confirmation:
+      required: true
+      selector: {boolean: {}}
+    value:
+      required: true
+      selector: {object: {}}
+    reason:
+      required: true
+      selector: {text: {multiline: true}}
+create_standing_intent:
+  fields:
+    owner_resident_id:
+      required: true
+      selector: {text: {}}
+    description:
+      required: true
+      selector: {text: {multiline: true}}
+    trigger_predicates:
+      required: true
+      selector: {object: {}}
+    delivery_target:
+      required: true
+      selector: {text: {}}
+    cooldown_seconds:
+      selector: {number: {min: 0, max: 604800, mode: box}}
+    expires_at:
+      required: true
+      selector: {datetime: {}}
+    resident_confirmation:
+      required: true
+      selector: {boolean: {}}
+cancel_standing_intent:
+  fields:
+    intent_id:
+      required: true
+      selector: {text: {}}
+    resident_id:
+      required: true
+      selector: {text: {}}
+set_cognition_program:
+  fields:
+    program_id:
+      required: true
+      selector: {text: {}}
+    mode:
+      required: true
+      selector:
+        select:
+          options:
+            - "off"
+            - audit
+            - publish
+    sensitivity:
+      required: true
+      selector:
+        select:
+          options:
+            - quiet
+            - normal
+            - sensitive
+    owner:
+      required: true
+      selector: {text: {}}
+    owner_confirmation:
+      required: true
+      selector: {boolean: {}}
 execute_capability:
   fields:
     request:

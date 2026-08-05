@@ -10,6 +10,7 @@ SENSORS = {
     "last_decision": "Last decision",
     "decision_latency": "Decision latency",
     "shadow_precision": "Shadow precision",
+    "pending_memory_candidates": "Pending memory candidates",
 }
 
 

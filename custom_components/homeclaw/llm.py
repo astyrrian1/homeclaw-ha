@@ -40,6 +40,26 @@ class ExplainBeliefsTool(llm.Tool):
         return await coordinator.client.get("/v1/beliefs")
 
 
+class GetWorldStateTool(llm.Tool):
+    name = "GetHomeclawWorldState"
+    description = "Return authoritative working state, source health, and active beliefs."
+
+    async def async_call(self, hass, tool_input: ToolInput, llm_context: LLMContext):
+        del tool_input, llm_context
+        coordinator = next(iter(hass.data[DOMAIN].values()))
+        return await coordinator.client.get("/v1/world")
+
+
+class GetStandingIntentsTool(llm.Tool):
+    name = "GetHomeclawStandingIntents"
+    description = "Inspect confirmed, notification-only future household intentions."
+
+    async def async_call(self, hass, tool_input: ToolInput, llm_context: LLMContext):
+        del tool_input, llm_context
+        coordinator = next(iter(hass.data[DOMAIN].values()))
+        return await coordinator.client.get("/v1/standing-intents")
+
+
 @callback
 def async_get_tools(
     hass: HomeAssistant, llm_context: LLMContext, api_id: str
@@ -48,7 +68,12 @@ def async_get_tools(
     if not hass.data.get(DOMAIN):
         return None
     return llm.LLMTools(
-        tools=[SearchTimelineTool(), ExplainBeliefsTool()],
+        tools=[
+            SearchTimelineTool(),
+            ExplainBeliefsTool(),
+            GetWorldStateTool(),
+            GetStandingIntentsTool(),
+        ],
         prompt=(
             "Use Homeclaw tools only to query shared household evidence and explanations. "
             "They do not expose device control."

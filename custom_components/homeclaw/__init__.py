@@ -36,6 +36,32 @@ async def async_setup_entry(hass, entry) -> bool:
             await client.post("/v1/digests/run", dict(call.data))
         elif call.service == "forget_memory":
             await client.post("/v1/memory/delete", dict(call.data))
+        elif call.service in {"approve_memory", "reject_memory"}:
+            candidate_id = call.data["candidate_id"]
+            operation = "approve" if call.service == "approve_memory" else "reject"
+            await client.post(
+                f"/v1/memory/candidates/{candidate_id}/{operation}",
+                {key: value for key, value in call.data.items() if key != "candidate_id"},
+            )
+        elif call.service == "correct_memory":
+            claim_id = call.data["claim_id"]
+            await client.post(
+                f"/v1/memory/claims/{claim_id}/correct",
+                {key: value for key, value in call.data.items() if key != "claim_id"},
+            )
+        elif call.service == "create_standing_intent":
+            await client.post("/v1/standing-intents", dict(call.data))
+        elif call.service == "cancel_standing_intent":
+            intent_id = call.data["intent_id"]
+            await client.delete(
+                f"/v1/standing-intents/{intent_id}?resident_id={call.data['resident_id']}"
+            )
+        elif call.service == "set_cognition_program":
+            program_id = call.data["program_id"]
+            await client.put(
+                f"/v1/cognition/programs/{program_id}",
+                {key: value for key, value in call.data.items() if key != "program_id"},
+            )
 
     async def execute_capability(call: ServiceCall):
         return await executor.execute(dict(call.data["request"]))
@@ -68,6 +94,59 @@ async def async_setup_entry(hass, entry) -> bool:
                 vol.Optional("before"): cv.string,
             }
         ),
+        "approve_memory": vol.Schema(
+            {
+                vol.Required("candidate_id"): cv.string,
+                vol.Required("owner"): cv.string,
+                vol.Required("owner_confirmation"): cv.boolean,
+                vol.Optional("reason"): cv.string,
+            }
+        ),
+        "reject_memory": vol.Schema(
+            {
+                vol.Required("candidate_id"): cv.string,
+                vol.Required("owner"): cv.string,
+                vol.Required("owner_confirmation"): cv.boolean,
+                vol.Optional("reason"): cv.string,
+            }
+        ),
+        "correct_memory": vol.Schema(
+            {
+                vol.Required("claim_id"): cv.string,
+                vol.Required("owner"): cv.string,
+                vol.Required("owner_confirmation"): cv.boolean,
+                vol.Required("value"): object,
+                vol.Required("reason"): cv.string,
+            }
+        ),
+        "create_standing_intent": vol.Schema(
+            {
+                vol.Required("owner_resident_id"): cv.string,
+                vol.Required("description"): cv.string,
+                vol.Required("trigger_predicates"): dict,
+                vol.Required("delivery_target"): cv.string,
+                vol.Optional("cooldown_seconds", default=0): vol.All(
+                    vol.Coerce(int), vol.Range(min=0, max=604800)
+                ),
+                vol.Required("expires_at"): cv.string,
+                vol.Required("resident_confirmation"): cv.boolean,
+            }
+        ),
+        "cancel_standing_intent": vol.Schema(
+            {
+                vol.Required("intent_id"): cv.string,
+                vol.Required("resident_id"): cv.string,
+            }
+        ),
+        "set_cognition_program": vol.Schema(
+            {
+                vol.Required("program_id"): cv.string,
+                vol.Required("mode"): vol.In(["off", "audit", "publish"]),
+                vol.Required("sensitivity"): vol.In(["quiet", "normal", "sensitive"]),
+                vol.Required("owner"): cv.string,
+                vol.Required("owner_confirmation"): cv.boolean,
+            }
+        ),
     }
     for service, schema in service_schemas.items():
         hass.services.async_register(DOMAIN, service, handle_service, schema=schema)
@@ -92,6 +171,12 @@ async def async_unload_entry(hass, entry) -> bool:
                 "reject_proposal",
                 "run_digest",
                 "forget_memory",
+                "approve_memory",
+                "reject_memory",
+                "correct_memory",
+                "create_standing_intent",
+                "cancel_standing_intent",
+                "set_cognition_program",
                 "execute_capability",
             ):
                 hass.services.async_remove(DOMAIN, service)

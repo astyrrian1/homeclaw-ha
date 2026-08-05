@@ -60,6 +60,41 @@ class GetStandingIntentsTool(llm.Tool):
         return await coordinator.client.get("/v1/standing-intents")
 
 
+class ReadHouseJournalTool(llm.Tool):
+    name = "ReadHomeclawHouseJournal"
+    description = (
+        "Read evidence-linked Homeclaw observations, hypotheses, conclusions, revisions, "
+        "and hour/day/week rollups. Journal prose is interpretation; inspect its evidence IDs."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Optional("room"): vol.In(
+                [
+                    "house",
+                    "occupancy",
+                    "security",
+                    "comfort_iaq",
+                    "energy",
+                    "equipment",
+                    "network",
+                ]
+            ),
+            vol.Optional("level"): vol.In(
+                ["event", "situation", "hour", "day", "week", "month", "season"]
+            ),
+            vol.Optional("limit", default=20): vol.All(int, vol.Range(min=1, max=50)),
+        }
+    )
+
+    async def async_call(self, hass, tool_input: ToolInput, llm_context: LLMContext):
+        del llm_context
+        coordinator = next(iter(hass.data[DOMAIN].values()))
+        arguments = urlencode(
+            {key: value for key, value in tool_input.tool_args.items() if value is not None}
+        )
+        return await coordinator.client.get(f"/v1/journal/entries?{arguments}")
+
+
 @callback
 def async_get_tools(
     hass: HomeAssistant, llm_context: LLMContext, api_id: str
@@ -73,9 +108,11 @@ def async_get_tools(
             ExplainBeliefsTool(),
             GetWorldStateTool(),
             GetStandingIntentsTool(),
+            ReadHouseJournalTool(),
         ],
         prompt=(
             "Use Homeclaw tools only to query shared household evidence and explanations. "
-            "They do not expose device control."
+            "House Journal text is derived interpretation, so retain its evidence lineage. "
+            "These tools do not expose device control."
         ),
     )

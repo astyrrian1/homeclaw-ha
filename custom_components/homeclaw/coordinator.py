@@ -29,6 +29,7 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 programs,
                 candidates,
                 intents,
+                journal,
             ) = await asyncio.gather(
                 self.client.get("/v1/status"),
                 self.client.get("/v1/timeline?limit=20"),
@@ -38,6 +39,7 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.client.get("/v1/cognition/programs"),
                 self.client.get("/v1/memory/candidates?limit=50"),
                 self.client.get("/v1/standing-intents?limit=50"),
+                self.client.get("/v1/journal/entries?limit=20"),
             )
         except Exception as exc:
             raise UpdateFailed(str(exc)) from exc
@@ -59,4 +61,5 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "memory_candidates": candidates.get("items", []),
             "pending_memory_candidates": len(pending_candidates),
             "standing_intents": intents.get("items", []),
+            "journal_entries": journal.get("items", []),
         }

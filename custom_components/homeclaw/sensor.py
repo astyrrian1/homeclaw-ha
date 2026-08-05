@@ -11,6 +11,8 @@ SENSORS = {
     "decision_latency": "Decision latency",
     "shadow_precision": "Shadow precision",
     "pending_memory_candidates": "Pending memory candidates",
+    "integration_health": "Integration health",
+    "api_version": "API version",
 }
 
 

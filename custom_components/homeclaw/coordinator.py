@@ -3,6 +3,7 @@ import logging
 from datetime import timedelta
 from typing import Any
 
+from aiohttp import ClientResponseError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .client import HomeclawClient
@@ -28,6 +29,20 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.notification_services = notification_services
 
     async def _async_update_data(self) -> dict[str, Any]:
+        integration_health = "ok"
+        try:
+            meta = await self.client.get("/v1/meta")
+        except ClientResponseError as exc:
+            if exc.status != 404:
+                raise UpdateFailed(str(exc)) from exc
+            meta = {"api_version": "legacy", "features": {}}
+            integration_health = "version_skew"
+        features = meta.get("features", {})
+        if not all(
+            features.get(name) is True
+            for name in ("house_journal", "signal_summaries", "audit_funnel")
+        ):
+            integration_health = "version_skew"
         try:
             (
                 status,
@@ -78,6 +93,14 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         except Exception as exc:
             raise UpdateFailed(str(exc)) from exc
+        journal: dict[str, Any] = {"items": []}
+        if features.get("house_journal") is True:
+            try:
+                journal = await self.client.get("/v1/journal/entries?limit=20")
+            except ClientResponseError as exc:
+                if exc.status != 404:
+                    raise UpdateFailed(str(exc)) from exc
+                integration_health = "version_skew"
         events = [{"record_type": "insight", **item} for item in insights.get("items", [])] + [
             {"record_type": "action_proposal", **item} for item in proposals.get("items", [])
         ]
@@ -108,6 +131,8 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "resident_profiles": resident_profiles.get("items", []),
             "forecasts": forecasts.get("items", []),
             "experiments": experiments.get("items", []),
+            "integration_health": integration_health,
+            "api_version": meta.get("api_version", "unknown"),
         }
 
     async def async_deliver_notification(self, item: dict[str, Any]) -> None:

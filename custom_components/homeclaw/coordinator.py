@@ -103,11 +103,11 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if exc.status != 404:
                     raise UpdateFailed(str(exc)) from exc
                 integration_health = "version_skew"
-        events = [{"record_type": "insight", **item} for item in insights.get("items", [])] + [
-            {"record_type": "action_proposal", **item} for item in proposals.get("items", [])
+        events = [{**item, "record_type": "insight"} for item in insights.get("items", [])] + [
+            {**item, "record_type": "action_proposal"} for item in proposals.get("items", [])
         ]
         pending_notifications = [
-            {"record_type": "notification", **item} for item in notifications.get("items", [])
+            {**item, "record_type": "notification"} for item in notifications.get("items", [])
         ]
         events.extend(pending_notifications)
         pending_candidates = [

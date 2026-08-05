@@ -66,6 +66,24 @@ class HomeclawPanel extends HTMLElement {
     this.render();
   }
 
+  async _submitFeedback(targetId, kind) {
+    if (!this._hass || this._loading) return;
+    this._loading = true;
+    this.render();
+    try {
+      await this._hass.callService("homeclaw", "submit_feedback", {
+        target_id: targetId,
+        kind,
+      });
+      this._loading = false;
+      await this._load();
+    } catch (error) {
+      this._loading = false;
+      this._error = String(error?.message || error);
+      this.render();
+    }
+  }
+
   render() {
     if (!this.shadowRoot) return;
     const data = this._data || {};
@@ -79,10 +97,15 @@ class HomeclawPanel extends HTMLElement {
         <nav>${VIEWS.map(([id, label]) => `<button data-view="${id}" class="${id === this._view ? "active" : ""}">${label}</button>`).join("")}</nav>
         ${this._error ? `<div class="error">${escapeHtml(this._error)}</div>` : ""}
         ${this._renderView(data)}
-        <footer>Read-only shared household view · refreshes every 10 seconds</footer>
+        <footer>Shared household view · review actions use your mapped HA identity · refreshes every 10 seconds</footer>
       </main>`;
     this.shadowRoot.querySelectorAll("button[data-view]").forEach((button) => {
       button.addEventListener("click", () => this._select(button.dataset.view));
+    });
+    this.shadowRoot.querySelectorAll("button[data-feedback]").forEach((button) => {
+      button.addEventListener("click", () =>
+        this._submitFeedback(button.dataset.targetId, button.dataset.feedback),
+      );
     });
   }
 
@@ -92,12 +115,12 @@ class HomeclawPanel extends HTMLElement {
       journal: () => listSection("House Journal", data.journal_entries, journalItem),
       evidence: () => listSection("Recent evidence", data.timeline, genericItem),
       insights: () => `${listSection("Insights and proposals", data.events, genericItem)}${listSection("Numeric forecasts", data.forecasts, genericItem)}`,
-      cognition: () => `${listSection("Cognition Packs", data.cognition_programs, programItem)}${listSection("Recent runs", data.cognition_runs, genericItem)}`,
+      cognition: () => `${listSection("Cognition Packs", data.cognition_programs, programItem)}${listSection("Recent runs", data.cognition_runs, cognitionRunItem)}`,
       memory: () => listSection("Approved household memory", data.memory_claims, memoryItem),
       intentions: () => `${listSection("Standing intentions", data.standing_intents, genericItem)}${listSection("Scheduled reminders", data.scheduled_jobs, genericItem)}`,
-      review: () => `${listSection("Pending memory review", data.memory_candidates, genericItem)}${listSection("Procedural proposals", data.procedural_proposals, genericItem)}`,
+      review: () => `${listSection("Unreviewed cognition samples", (data.cognition_runs || []).filter((item) => item.qualification_eligible && !item.review_kind), cognitionRunItem)}${listSection("Pending memory review", data.memory_candidates, genericItem)}${listSection("Procedural proposals", data.procedural_proposals, genericItem)}`,
       settings: () => listSection("Resident profiles", data.resident_profiles, genericItem),
-      operations: () => `${this._operations(data)}${listSection("Controlled experiments", data.experiments, genericItem)}`,
+      operations: () => `${this._operations(data)}${listSection("Production qualification", data.qualification_checks, qualificationItem)}${listSection("Controlled experiments", data.experiments, genericItem)}`,
     };
     return (views[this._view] || views.now)();
   }
@@ -155,6 +178,30 @@ function programItem(item) {
   return row(item.program_id || item.id || "Pack", `${item.mode || "audit"} · ${item.sensitivity || "normal"}`, item.version || item.last_evaluated_at);
 }
 
+function cognitionRunItem(item) {
+  const reviewed = item.review_kind
+    ? `<small>Reviewed ${escapeHtml(item.review_kind)} · ${formatTime(item.reviewed_at)}</small>`
+    : item.qualification_eligible
+      ? `<div class="review-actions">
+          <button data-target-id="${escapeHtml(item.id)}" data-feedback="useful">Useful</button>
+          <button data-target-id="${escapeHtml(item.id)}" data-feedback="noisy">Noisy</button>
+          <button data-target-id="${escapeHtml(item.id)}" data-feedback="wrong_evidence">Wrong evidence</button>
+          <button data-target-id="${escapeHtml(item.id)}" data-feedback="wrong_timing">Wrong timing</button>
+        </div>`
+      : "<small>Historical audit · not qualification eligible</small>";
+  return `<article class="row review-row"><div><strong>${escapeHtml(item.program_id || "Cognition run")}</strong><p>${escapeHtml(item.assessment || "")}</p><small>${escapeHtml(item.disposition || "unknown")} · confidence ${escapeHtml(item.confidence ?? "—")} · ${formatTime(item.completed_at)}</small></div>${reviewed}</article>`;
+}
+
+function qualificationItem(item) {
+  const identity = item.release_identity || {};
+  const detail = item.evidence || {};
+  return row(
+    item.check_id || "Qualification check",
+    `${item.status || "unknown"} · ${stringify(detail)}`,
+    `${item.category || "check"} · ${identity.model_name || identity.release || identity.schema || "current release"} · ${formatTime(item.completed_at || item.started_at)}`,
+  );
+}
+
 function memoryItem(item) {
   return row(`${item.subject || "House"} · ${item.predicate || "memory"}`, stringify(item.value), `${item.status || "active"} · confidence ${item.confidence ?? "—"}`);
 }
@@ -209,6 +256,9 @@ const STYLE = `
   .row { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; padding:13px 15px; }
   .row p { margin:5px 0 0; color:var(--secondary-text-color); line-height:1.4; white-space:pre-wrap; }
   .row small { color:var(--secondary-text-color); white-space:nowrap; }
+  .review-row { align-items:center; }
+  .review-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; max-width:360px; }
+  .review-actions button { padding:6px 9px; font-size:.76rem; }
   .empty { color:var(--secondary-text-color); }
   .error { background:#a33636; color:white; border-radius:10px; padding:10px 13px; }
   footer { color:var(--secondary-text-color); font-size:.75rem; margin:30px 0 12px; text-align:center; }

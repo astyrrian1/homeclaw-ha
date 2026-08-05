@@ -65,6 +65,7 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 resident_profiles,
                 forecasts,
                 experiments,
+                qualification_checks,
             ) = await asyncio.gather(
                 self.client.get("/v1/status"),
                 self.client.get("/v1/timeline?limit=20"),
@@ -90,6 +91,7 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.client.get("/v1/residents/profiles"),
                 self.client.get("/v1/forecasts?limit=50"),
                 self.client.get("/v1/experiments?limit=50"),
+                self.client.get("/v1/qualification/checks?limit=100"),
             )
         except Exception as exc:
             raise UpdateFailed(str(exc)) from exc
@@ -133,6 +135,7 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "experiments": experiments.get("items", []),
             "integration_health": integration_health,
             "api_version": meta.get("api_version", "unknown"),
+            "qualification_checks": qualification_checks.get("items", []),
         }
 
     async def async_deliver_notification(self, item: dict[str, Any]) -> None:

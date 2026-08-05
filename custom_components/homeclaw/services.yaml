@@ -3,9 +3,6 @@ submit_feedback:
     kind:
       required: true
       selector: {text: {}}
-    resident_id:
-      required: true
-      selector: {text: {}}
     target_id:
       required: true
       selector: {text: {}}
@@ -19,18 +16,13 @@ approve_proposal:
     approval_token:
       required: true
       selector: {text: {type: password}}
-    resident_id:
-      required: true
-      selector: {text: {}}
 reject_proposal:
   fields:
     proposal_id:
       required: true
       selector: {text: {}}
 run_digest:
-  fields:
-    resident_id:
-      selector: {text: {}}
+  fields: {}
 forget_memory:
   fields:
     scope:
@@ -66,9 +58,6 @@ approve_memory:
     candidate_id:
       required: true
       selector: {text: {}}
-    owner:
-      required: true
-      selector: {text: {}}
     owner_confirmation:
       required: true
       selector: {boolean: {}}
@@ -79,9 +68,6 @@ reject_memory:
     candidate_id:
       required: true
       selector: {text: {}}
-    owner:
-      required: true
-      selector: {text: {}}
     owner_confirmation:
       required: true
       selector: {boolean: {}}
@@ -90,9 +76,6 @@ reject_memory:
 correct_memory:
   fields:
     claim_id:
-      required: true
-      selector: {text: {}}
-    owner:
       required: true
       selector: {text: {}}
     owner_confirmation:
@@ -106,9 +89,6 @@ correct_memory:
       selector: {text: {multiline: true}}
 create_standing_intent:
   fields:
-    owner_resident_id:
-      required: true
-      selector: {text: {}}
     description:
       required: true
       selector: {text: {multiline: true}}
@@ -129,9 +109,6 @@ create_standing_intent:
 cancel_standing_intent:
   fields:
     intent_id:
-      required: true
-      selector: {text: {}}
-    resident_id:
       required: true
       selector: {text: {}}
 set_cognition_program:
@@ -155,9 +132,6 @@ set_cognition_program:
             - quiet
             - normal
             - sensitive
-    owner:
-      required: true
-      selector: {text: {}}
     owner_confirmation:
       required: true
       selector: {boolean: {}}

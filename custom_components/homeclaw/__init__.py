@@ -1,13 +1,22 @@
 import voluptuous as vol
 from homeassistant.const import CONF_ACCESS_TOKEN, CONF_URL
 from homeassistant.core import ServiceCall, SupportsResponse
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .client import HomeclawClient
-from .const import DOMAIN, PLATFORMS
+from .const import (
+    CONF_ACTOR_MAPPINGS,
+    CONF_ACTOR_SECRET,
+    CONF_NOTIFICATION_SERVICES,
+    DOMAIN,
+    PLATFORMS,
+    TRANSPORT_ACTOR,
+)
 from .coordinator import HomeclawCoordinator
 from .execution import CapabilityExecutor
+from .panel import async_register_homeclaw_panel, async_remove_homeclaw_panel
 
 
 async def _async_reload_entry(hass, entry) -> None:
@@ -17,50 +26,74 @@ async def _async_reload_entry(hass, entry) -> None:
 async def async_setup_entry(hass, entry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     client = HomeclawClient(
-        async_get_clientsession(hass), entry.data[CONF_URL], entry.data[CONF_ACCESS_TOKEN]
+        async_get_clientsession(hass),
+        entry.data[CONF_URL],
+        entry.data[CONF_ACCESS_TOKEN],
+        actor_secret=entry.options.get(CONF_ACTOR_SECRET, ""),
     )
-    coordinator = HomeclawCoordinator(hass, client)
+    coordinator = HomeclawCoordinator(
+        hass,
+        client,
+        transport_actor=TRANSPORT_ACTOR,
+        notification_services=entry.options.get(CONF_NOTIFICATION_SERVICES, {}),
+    )
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    await async_register_homeclaw_panel(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     executor = CapabilityExecutor(hass, entry, coordinator)
 
     async def handle_service(call: ServiceCall) -> None:
+        ha_user_id = call.context.user_id
+        mapping = entry.options.get(CONF_ACTOR_MAPPINGS, {}).get(ha_user_id or "")
+        if not ha_user_id or not mapping:
+            raise ServiceValidationError("Homeclaw service requires a mapped HA resident")
+        actor = {
+            "ha_user_id": ha_user_id,
+            "resident_id": mapping["resident_id"],
+            "role": mapping["role"],
+        }
         if call.service == "submit_feedback":
-            await client.post("/v1/feedback", dict(call.data))
+            await client.post("/v1/feedback", dict(call.data), actor=actor)
         elif call.service in {"approve_proposal", "reject_proposal"}:
             proposal_id = call.data["proposal_id"]
             operation = "approve" if call.service == "approve_proposal" else "reject"
-            await client.post(f"/v1/proposals/{proposal_id}/{operation}", dict(call.data))
+            await client.post(
+                f"/v1/proposals/{proposal_id}/{operation}", dict(call.data), actor=actor
+            )
         elif call.service == "run_digest":
-            await client.post("/v1/digests/run", dict(call.data))
+            await client.post("/v1/digests/run", dict(call.data), actor=actor)
         elif call.service == "forget_memory":
-            await client.post("/v1/memory/delete", dict(call.data))
+            await client.post("/v1/memory/delete", dict(call.data), actor=actor)
         elif call.service in {"approve_memory", "reject_memory"}:
             candidate_id = call.data["candidate_id"]
             operation = "approve" if call.service == "approve_memory" else "reject"
             await client.post(
                 f"/v1/memory/candidates/{candidate_id}/{operation}",
                 {key: value for key, value in call.data.items() if key != "candidate_id"},
+                actor=actor,
             )
         elif call.service == "correct_memory":
             claim_id = call.data["claim_id"]
             await client.post(
                 f"/v1/memory/claims/{claim_id}/correct",
                 {key: value for key, value in call.data.items() if key != "claim_id"},
+                actor=actor,
             )
         elif call.service == "create_standing_intent":
-            await client.post("/v1/standing-intents", dict(call.data))
+            await client.post("/v1/standing-intents", dict(call.data), actor=actor)
         elif call.service == "cancel_standing_intent":
             intent_id = call.data["intent_id"]
             await client.delete(
-                f"/v1/standing-intents/{intent_id}?resident_id={call.data['resident_id']}"
+                f"/v1/standing-intents/{intent_id}",
+                actor=actor,
             )
         elif call.service == "set_cognition_program":
             program_id = call.data["program_id"]
             await client.put(
                 f"/v1/cognition/programs/{program_id}",
                 {key: value for key, value in call.data.items() if key != "program_id"},
+                actor=actor,
             )
 
     async def execute_capability(call: ServiceCall):
@@ -70,7 +103,6 @@ async def async_setup_entry(hass, entry) -> bool:
         "submit_feedback": vol.Schema(
             {
                 vol.Required("kind"): cv.string,
-                vol.Required("resident_id"): cv.string,
                 vol.Required("target_id"): cv.string,
                 vol.Optional("correction"): cv.string,
             }
@@ -78,7 +110,6 @@ async def async_setup_entry(hass, entry) -> bool:
         "approve_proposal": vol.Schema(
             {
                 vol.Required("proposal_id"): cv.string,
-                vol.Required("resident_id"): cv.string,
                 vol.Required("approval_token"): cv.string,
             }
         ),
@@ -97,7 +128,6 @@ async def async_setup_entry(hass, entry) -> bool:
         "approve_memory": vol.Schema(
             {
                 vol.Required("candidate_id"): cv.string,
-                vol.Required("owner"): cv.string,
                 vol.Required("owner_confirmation"): cv.boolean,
                 vol.Optional("reason"): cv.string,
             }
@@ -105,7 +135,6 @@ async def async_setup_entry(hass, entry) -> bool:
         "reject_memory": vol.Schema(
             {
                 vol.Required("candidate_id"): cv.string,
-                vol.Required("owner"): cv.string,
                 vol.Required("owner_confirmation"): cv.boolean,
                 vol.Optional("reason"): cv.string,
             }
@@ -113,7 +142,6 @@ async def async_setup_entry(hass, entry) -> bool:
         "correct_memory": vol.Schema(
             {
                 vol.Required("claim_id"): cv.string,
-                vol.Required("owner"): cv.string,
                 vol.Required("owner_confirmation"): cv.boolean,
                 vol.Required("value"): object,
                 vol.Required("reason"): cv.string,
@@ -121,7 +149,6 @@ async def async_setup_entry(hass, entry) -> bool:
         ),
         "create_standing_intent": vol.Schema(
             {
-                vol.Required("owner_resident_id"): cv.string,
                 vol.Required("description"): cv.string,
                 vol.Required("trigger_predicates"): dict,
                 vol.Required("delivery_target"): cv.string,
@@ -135,7 +162,6 @@ async def async_setup_entry(hass, entry) -> bool:
         "cancel_standing_intent": vol.Schema(
             {
                 vol.Required("intent_id"): cv.string,
-                vol.Required("resident_id"): cv.string,
             }
         ),
         "set_cognition_program": vol.Schema(
@@ -143,7 +169,6 @@ async def async_setup_entry(hass, entry) -> bool:
                 vol.Required("program_id"): cv.string,
                 vol.Required("mode"): vol.In(["off", "audit", "publish"]),
                 vol.Required("sensitivity"): vol.In(["quiet", "normal", "sensitive"]),
-                vol.Required("owner"): cv.string,
                 vol.Required("owner_confirmation"): cv.boolean,
             }
         ),
@@ -165,6 +190,7 @@ async def async_unload_entry(hass, entry) -> bool:
     if unloaded:
         hass.data[DOMAIN].pop(entry.entry_id)
         if not hass.data[DOMAIN]:
+            async_remove_homeclaw_panel(hass)
             for service in (
                 "submit_feedback",
                 "approve_proposal",

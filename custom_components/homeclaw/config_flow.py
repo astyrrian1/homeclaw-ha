@@ -8,9 +8,12 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .client import CannotConnect, HomeclawClient, InvalidAuth
 from .const import (
+    CONF_ACTOR_MAPPINGS,
+    CONF_ACTOR_SECRET,
     CONF_CAPABILITY_MAPPINGS,
     CONF_EXECUTION_SECRET,
     CONF_HOUSE_MODE_ENTITY,
+    CONF_NOTIFICATION_SERVICES,
     DEFAULT_URL,
     DOMAIN,
 )
@@ -61,15 +64,43 @@ class HomeclawOptionsFlow(config_entries.OptionsFlow):
                 mappings = json.loads(user_input.pop("capability_mappings_json"))
                 if not isinstance(mappings, dict):
                     raise ValueError("mapping must be an object")
+                actor_mappings = json.loads(user_input.pop("actor_mappings_json"))
+                if not isinstance(actor_mappings, dict) or any(
+                    not isinstance(item, dict)
+                    or not item.get("resident_id")
+                    or item.get("role")
+                    not in {"resident", "owner", "ha_integration", "operator_readonly"}
+                    for item in actor_mappings.values()
+                ):
+                    raise ValueError("actor mapping must bind HA users to resident/owner roles")
+                notification_services = json.loads(user_input.pop("notification_services_json"))
+                if not isinstance(notification_services, dict) or any(
+                    not isinstance(services, list)
+                    or any(
+                        not isinstance(service, str) or not service.startswith("notify.")
+                        for service in services
+                    )
+                    for services in notification_services.values()
+                ):
+                    raise ValueError("notification services must map residents to notify services")
             except (json.JSONDecodeError, ValueError):
                 errors["base"] = "invalid_capability_mappings"
             else:
                 return self.async_create_entry(
                     title="",
-                    data={**user_input, CONF_CAPABILITY_MAPPINGS: mappings},
+                    data={
+                        **user_input,
+                        CONF_CAPABILITY_MAPPINGS: mappings,
+                        CONF_ACTOR_MAPPINGS: actor_mappings,
+                        CONF_NOTIFICATION_SERVICES: notification_services,
+                    },
                 )
         existing = self._entry.options
         mappings_json = json.dumps(existing.get(CONF_CAPABILITY_MAPPINGS, {}), indent=2)
+        actor_mappings_json = json.dumps(existing.get(CONF_ACTOR_MAPPINGS, {}), indent=2)
+        notification_services_json = json.dumps(
+            existing.get(CONF_NOTIFICATION_SERVICES, {}), indent=2
+        )
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
@@ -79,10 +110,18 @@ class HomeclawOptionsFlow(config_entries.OptionsFlow):
                         default=existing.get(CONF_EXECUTION_SECRET, ""),
                     ): str,
                     vol.Optional(
+                        CONF_ACTOR_SECRET,
+                        default=existing.get(CONF_ACTOR_SECRET, ""),
+                    ): str,
+                    vol.Optional(
                         CONF_HOUSE_MODE_ENTITY,
                         default=existing.get(CONF_HOUSE_MODE_ENTITY, ""),
                     ): str,
                     vol.Required("capability_mappings_json", default=mappings_json): str,
+                    vol.Required("actor_mappings_json", default=actor_mappings_json): str,
+                    vol.Required(
+                        "notification_services_json", default=notification_services_json
+                    ): str,
                 }
             ),
             errors=errors,

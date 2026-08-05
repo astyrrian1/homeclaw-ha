@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -63,6 +64,10 @@ class CapabilityExecutor:
             "homeclaw_capability": capability,
             "homeclaw_parameters": parameters,
         }
+        postconditions = mapping.get("postconditions", {})
+        if not isinstance(postconditions, dict):
+            raise HomeAssistantError("capability postconditions must be an object")
+        before_states = self._state_snapshot({*postconditions, *mapping.get("required_states", {})})
         try:
             await self._hass.services.async_call(
                 "script",
@@ -71,19 +76,42 @@ class CapabilityExecutor:
                 blocking=True,
             )
         except Exception as exc:
-            rollback = str(mapping.get("rollback_script", ""))
-            if rollback.startswith("script.") and self._hass.states.get(rollback) is not None:
-                await self._hass.services.async_call(
-                    "script",
-                    "turn_on",
-                    {"entity_id": rollback, "variables": variables},
-                    blocking=True,
-                )
-                return {"status": "reverted", "error": str(exc), "resulting_states": {}}
+            rollback_result = await self._run_rollback(mapping, variables)
+            if rollback_result is not None:
+                return {
+                    "status": "reverted" if rollback_result["succeeded"] else "failed",
+                    "error": str(exc),
+                    "mapping_version": mapping["mapping_version"],
+                    "before_states": before_states,
+                    "resulting_states": rollback_result["states"],
+                    "postconditions_met": False,
+                    "rollback": rollback_result,
+                }
             raise
+        timeout = max(1, min(int(mapping.get("outcome_timeout_seconds", 30)), 300))
+        if postconditions and not await self._wait_for_states(postconditions, timeout):
+            rollback_result = await self._run_rollback(mapping, variables)
+            return {
+                "status": (
+                    "reverted"
+                    if rollback_result is not None and rollback_result["succeeded"]
+                    else "failed"
+                ),
+                "error": "capability postconditions timed out",
+                "mapping_version": mapping["mapping_version"],
+                "before_states": before_states,
+                "resulting_states": self._state_snapshot(postconditions),
+                "postconditions_met": False,
+                "timed_out": True,
+                "rollback": rollback_result,
+            }
         return {
             "status": "achieved",
-            "resulting_states": {handler: self._hass.states.get(handler).state},
+            "mapping_version": mapping["mapping_version"],
+            "before_states": before_states,
+            "resulting_states": self._state_snapshot(postconditions)
+            or {handler: self._hass.states.get(handler).state},
+            "postconditions_met": True,
         }
 
     def _validate_envelope(self, request: dict[str, Any]) -> None:
@@ -97,9 +125,10 @@ class CapabilityExecutor:
             "issued_at",
             "expires_at",
             "confirmed",
+            "mapping_version",
             "signature",
         }
-        if set(request) != expected or request.get("schema_version") != "1":
+        if set(request) != expected or request.get("schema_version") != "2":
             raise HomeAssistantError("malformed capability envelope")
         secret = str(self._entry.options.get(CONF_EXECUTION_SECRET, ""))
         if len(secret) < 32 or not _verify_signature(request, secret.encode()):
@@ -141,6 +170,9 @@ class CapabilityExecutor:
         self, request: dict[str, Any], mapping: dict[str, Any], role: str
     ) -> None:
         mode = str(self._coordinator.data.get("authority_mode", "off"))
+        mapping_version = str(mapping.get("mapping_version", ""))
+        if not mapping_version or request["mapping_version"] != mapping_version:
+            raise HomeAssistantError("capability mapping version does not match")
         if request["confirmed"]:
             if mode not in {"suggest", "bounded_auto"}:
                 raise HomeAssistantError(
@@ -170,6 +202,55 @@ class CapabilityExecutor:
         previous = self._last_execution.get((request["capability"], role))
         if previous is not None and (datetime.now(UTC) - previous).total_seconds() < cooldown:
             raise HomeAssistantError("capability cooldown is active")
+
+    def _state_snapshot(self, entity_ids) -> dict[str, str | None]:
+        return {
+            str(entity_id): (
+                self._hass.states.get(str(entity_id)).state
+                if self._hass.states.get(str(entity_id)) is not None
+                else None
+            )
+            for entity_id in entity_ids
+        }
+
+    def _states_match(self, expected: dict[str, Any]) -> bool:
+        for entity_id, allowed_states in expected.items():
+            if not isinstance(entity_id, str) or not isinstance(allowed_states, list):
+                raise HomeAssistantError("capability postcondition is malformed")
+            state = self._hass.states.get(entity_id)
+            if state is None or state.state not in {str(item) for item in allowed_states}:
+                return False
+        return True
+
+    async def _wait_for_states(self, expected: dict[str, Any], timeout_seconds: int) -> bool:
+        deadline = asyncio.get_running_loop().time() + timeout_seconds
+        while True:
+            if self._states_match(expected):
+                return True
+            if asyncio.get_running_loop().time() >= deadline:
+                return False
+            await asyncio.sleep(0.5)
+
+    async def _run_rollback(
+        self, mapping: dict[str, Any], variables: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        rollback = str(mapping.get("rollback_script", ""))
+        if not rollback.startswith("script.") or self._hass.states.get(rollback) is None:
+            return None
+        try:
+            await self._hass.services.async_call(
+                "script",
+                "turn_on",
+                {"entity_id": rollback, "variables": variables},
+                blocking=True,
+            )
+            expected = mapping.get("rollback_postconditions", {})
+            if not isinstance(expected, dict):
+                raise HomeAssistantError("rollback postconditions must be an object")
+            succeeded = not expected or await self._wait_for_states(expected, 30)
+            return {"succeeded": succeeded, "states": self._state_snapshot(expected)}
+        except Exception as exc:
+            return {"succeeded": False, "states": {}, "error": str(exc)}
 
 
 def _canonical_payload(request: dict[str, Any]) -> bytes:

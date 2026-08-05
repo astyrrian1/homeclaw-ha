@@ -33,7 +33,7 @@ class HomeclawEvent(HomeclawEntity, EventEntity):
                     self._trigger_event("created", item)
                     if self._record_type == "notification":
                         self.hass.async_create_task(
-                            self.coordinator.client.post(f"/v1/notifications/{item_id}/ack"),
-                            f"acknowledge Homeclaw notification {item_id}",
+                            self.coordinator.async_deliver_notification(item),
+                            f"deliver Homeclaw notification {item_id}",
                         )
         super()._handle_coordinator_update()

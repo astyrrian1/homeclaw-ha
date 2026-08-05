@@ -1,4 +1,8 @@
+import logging
+from uuid import UUID
+
 import voluptuous as vol
+from aiohttp import ClientResponseError
 from homeassistant.const import CONF_ACCESS_TOKEN, CONF_URL
 from homeassistant.core import ServiceCall, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
@@ -17,6 +21,9 @@ from .const import (
 from .coordinator import HomeclawCoordinator
 from .execution import CapabilityExecutor
 from .panel import async_register_homeclaw_panel, async_remove_homeclaw_panel
+
+_LOGGER = logging.getLogger(__name__)
+_RECEIPT_ACTION_PREFIX = "HOMECLAW_RECEIPT_"
 
 
 async def _async_reload_entry(hass, entry) -> None:
@@ -42,6 +49,35 @@ async def async_setup_entry(hass, entry) -> bool:
     await async_register_homeclaw_panel(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     executor = CapabilityExecutor(hass, entry, coordinator)
+
+    async def handle_notification_action(event) -> None:
+        action = event.data.get("action")
+        if not isinstance(action, str) or not action.startswith(_RECEIPT_ACTION_PREFIX):
+            return
+        raw_callback_id = action.removeprefix(_RECEIPT_ACTION_PREFIX)
+        try:
+            callback_id = str(UUID(raw_callback_id))
+        except ValueError:
+            _LOGGER.warning("Ignoring malformed Homeclaw notification callback")
+            return
+        try:
+            await client.post(
+                "/v1/notifications/callback",
+                {
+                    "callback_id": callback_id,
+                    "transport_reference": f"mobile_app_notification_action:{event.context.id}",
+                },
+                actor=TRANSPORT_ACTOR,
+            )
+        except ClientResponseError as exc:
+            if exc.status == 404:
+                _LOGGER.debug("Homeclaw notification callback expired or was already used")
+                return
+            raise
+
+    entry.async_on_unload(
+        hass.bus.async_listen("mobile_app_notification_action", handle_notification_action)
+    )
 
     async def handle_service(call: ServiceCall) -> None:
         ha_user_id = call.context.user_id

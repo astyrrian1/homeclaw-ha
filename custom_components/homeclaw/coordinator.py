@@ -150,17 +150,31 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 domain, separator, service = value.partition(".")
                 if separator != "." or domain != "notify" or not service:
                     raise ValueError("Homeclaw notification services must use notify.<service>")
+                notification_data = {
+                    "homeclaw_delivery_id": item_id,
+                    "homeclaw_record_type": item.get("record_type"),
+                    "homeclaw_record_id": str(item.get("record_id", "")),
+                }
+                callback_id = str(item.get("callback_id") or "")
+                if service.startswith("mobile_app_") and callback_id:
+                    notification_data.update(
+                        {
+                            "tag": f"homeclaw-{item_id}",
+                            "actions": [
+                                {
+                                    "action": f"HOMECLAW_RECEIPT_{callback_id}",
+                                    "title": "Acknowledge",
+                                }
+                            ],
+                        }
+                    )
                 await self.hass.services.async_call(
                     domain,
                     service,
                     {
                         "title": item.get("title", "Homeclaw"),
                         "message": item.get("body", ""),
-                        "data": {
-                            "homeclaw_delivery_id": item_id,
-                            "homeclaw_record_type": item.get("record_type"),
-                            "homeclaw_record_id": str(item.get("record_id", "")),
-                        },
+                        "data": notification_data,
                     },
                     blocking=False,
                 )

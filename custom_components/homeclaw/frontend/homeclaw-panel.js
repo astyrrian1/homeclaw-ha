@@ -120,7 +120,7 @@ class HomeclawPanel extends HTMLElement {
       intentions: () => `${listSection("Standing intentions", data.standing_intents, genericItem)}${listSection("Scheduled reminders", data.scheduled_jobs, genericItem)}`,
       review: () => `${listSection("Unreviewed cognition samples", (data.cognition_runs || []).filter((item) => item.qualification_eligible && !item.review_kind), cognitionRunItem)}${listSection("Pending memory review", data.memory_candidates, genericItem)}${listSection("Procedural proposals", data.procedural_proposals, genericItem)}`,
       settings: () => listSection("Resident profiles", data.resident_profiles, genericItem),
-      operations: () => `${this._operations(data)}${listSection("Production qualification", data.qualification_checks, qualificationItem)}${listSection("Controlled experiments", data.experiments, genericItem)}`,
+      operations: () => `${this._operations(data)}${listSection("Continuous qualification", data.qualification_campaigns, qualificationItem)}${listSection("Production checks", data.qualification_checks, qualificationItem)}${listSection("Controlled experiments", data.experiments, genericItem)}`,
     };
     return (views[this._view] || views.now)();
   }

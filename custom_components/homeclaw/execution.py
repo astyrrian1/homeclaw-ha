@@ -75,7 +75,11 @@ class CapabilityExecutor:
         parameters = request["parameters"]
         role = str(parameters[CAPABILITY_SPECS[capability].role_key])
         mapping = self._mapping(capability, role)
-        self._validate_context(request, mapping, role)
+        house_mode = self._validate_context(request, mapping, role)
+        qualification_context = {
+            "semantic_role": role,
+            "house_mode": house_mode,
+        }
         handler = str(mapping.get("handler_script", ""))
         if not handler.startswith("script.") or self._hass.states.get(handler) is None:
             raise HomeAssistantError("capability handler is not an available allowlisted script")
@@ -110,6 +114,7 @@ class CapabilityExecutor:
                     "resulting_states": rollback_result["states"],
                     "postconditions_met": False,
                     "rollback": rollback_result,
+                    "qualification_context": qualification_context,
                 }
             raise
         timeout = max(1, min(int(mapping.get("outcome_timeout_seconds", 30)), 300))
@@ -128,6 +133,7 @@ class CapabilityExecutor:
                 "postconditions_met": False,
                 "timed_out": True,
                 "rollback": rollback_result,
+                "qualification_context": qualification_context,
             }
         return {
             "status": "achieved",
@@ -136,6 +142,7 @@ class CapabilityExecutor:
             "resulting_states": self._state_snapshot(postconditions)
             or {handler: self._hass.states.get(handler).state},
             "postconditions_met": True,
+            "qualification_context": qualification_context,
         }
 
     def _validate_envelope(self, request: dict[str, Any]) -> None:
@@ -193,7 +200,7 @@ class CapabilityExecutor:
 
     def _validate_context(
         self, request: dict[str, Any], mapping: dict[str, Any], role: str
-    ) -> None:
+    ) -> str | None:
         mode = str(self._coordinator.data.get("authority_mode", "off"))
         mapping_version = str(mapping.get("mapping_version", ""))
         if not mapping_version or request["mapping_version"] != mapping_version:
@@ -211,9 +218,12 @@ class CapabilityExecutor:
 
         house_mode_entity = str(self._entry.options.get(CONF_HOUSE_MODE_ENTITY, ""))
         allowed_modes = mapping.get("allowed_house_modes", [])
+        house_mode: str | None = None
+        if house_mode_entity:
+            current_mode = self._hass.states.get(house_mode_entity)
+            house_mode = current_mode.state if current_mode is not None else None
         if allowed_modes:
-            state = self._hass.states.get(house_mode_entity)
-            if state is None or state.state not in allowed_modes:
+            if house_mode is None or house_mode not in allowed_modes:
                 raise HomeAssistantError("current house mode violates capability preconditions")
         required_states = mapping.get("required_states", {})
         if not isinstance(required_states, dict):
@@ -230,6 +240,7 @@ class CapabilityExecutor:
         previous = self._last_execution.get((request["capability"], role))
         if previous is not None and (datetime.now(UTC) - previous).total_seconds() < cooldown:
             raise HomeAssistantError("capability cooldown is active")
+        return house_mode
 
     def _state_snapshot(self, entity_ids) -> dict[str, str | None]:
         return {

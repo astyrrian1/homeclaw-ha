@@ -107,6 +107,24 @@ class HomeclawPanel extends HTMLElement {
     }
   }
 
+  async _approveQualificationCampaign(campaignId) {
+    if (!campaignId || this._loading) return;
+    this._loading = true;
+    this.render();
+    try {
+      await this._hass.callService("homeclaw", "approve_qualification_campaign", {
+        campaign_id: campaignId,
+        owner_confirmation: true,
+      });
+      this._loading = false;
+      await this._load();
+    } catch (error) {
+      this._loading = false;
+      this._error = String(error?.message || error);
+      this.render();
+    }
+  }
+
   async _previewIntent(event) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -240,6 +258,11 @@ class HomeclawPanel extends HTMLElement {
         button.dataset.eligibility,
       ));
     });
+    this.shadowRoot.querySelectorAll("button[data-campaign-approve]").forEach((button) => {
+      button.addEventListener("click", () =>
+        this._approveQualificationCampaign(button.dataset.campaignApprove),
+      );
+    });
   }
 
   _renderView(data) {
@@ -362,11 +385,13 @@ function qualificationItem(item) {
   const blockers = Array.isArray(item.gate_blockers) && item.gate_blockers.length
     ? ` · blocked: ${item.gate_blockers.join(", ")}`
     : "";
-  return row(
-    item.scope || item.check_id || "Qualification check",
-    `${item.status || "unknown"} · ${evidence}${blockers}`,
-    `${item.candidate_hash ? `candidate ${item.candidate_hash.slice(0, 12)}` : item.category || "check"} · ${identity.model_name || identity.release || identity.schema || "current release"} · ${formatTime(item.completed_at || item.created_at)}`,
-  );
+  const title = item.scope || item.check_id || "Qualification check";
+  const body = `${item.status || "unknown"} · ${evidence}${blockers}`;
+  const meta = `${item.candidate_hash ? `candidate ${item.candidate_hash.slice(0, 12)}` : item.category || "check"} · ${identity.model_name || identity.release || identity.schema || "current release"} · ${formatTime(item.completed_at || item.created_at)}`;
+  const approval = item.status === "review_ready" && item.gate_ready
+    ? `<button data-campaign-approve="${escapeHtml(item.id)}">Owner approve exact gate</button>`
+    : "";
+  return `<article class="row"><div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(body)}</p>${approval}</div><small>${escapeHtml(meta)}</small></article>`;
 }
 
 function qualificationReviewItem(item) {

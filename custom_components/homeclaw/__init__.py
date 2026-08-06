@@ -143,6 +143,13 @@ async def async_setup_entry(hass, entry) -> bool:
                 {key: value for key, value in call.data.items() if key != "evidence_id"},
                 actor=actor,
             )
+        elif call.service == "approve_qualification_campaign":
+            campaign_id = call.data["campaign_id"]
+            await client.post(
+                f"/v1/qualification/campaigns/{campaign_id}/approve",
+                {key: value for key, value in call.data.items() if key != "campaign_id"},
+                actor=actor,
+            )
 
     async def execute_capability(call: ServiceCall):
         return await executor.execute(dict(call.data["request"]))
@@ -244,6 +251,12 @@ async def async_setup_entry(hass, entry) -> bool:
                 vol.Required("reason"): cv.string,
             }
         ),
+        "approve_qualification_campaign": vol.Schema(
+            {
+                vol.Required("campaign_id"): cv.string,
+                vol.Required("owner_confirmation"): cv.boolean,
+            }
+        ),
     }
     for service, schema in service_schemas.items():
         hass.services.async_register(DOMAIN, service, handle_service, schema=schema)
@@ -276,6 +289,7 @@ async def async_unload_entry(hass, entry) -> bool:
                 "cancel_standing_intent",
                 "set_cognition_program",
                 "review_qualification_evidence",
+                "approve_qualification_campaign",
                 "execute_capability",
             ):
                 hass.services.async_remove(DOMAIN, service)

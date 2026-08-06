@@ -168,6 +168,15 @@ review_qualification_evidence:
     reason:
       required: true
       selector: {text: {multiline: true}}
+approve_qualification_campaign:
+  description: Approve the exact current evidence-gate snapshot for later pack publication.
+  fields:
+    campaign_id:
+      required: true
+      selector: {text: {}}
+    owner_confirmation:
+      required: true
+      selector: {boolean: {}}
 execute_capability:
   fields:
     request:

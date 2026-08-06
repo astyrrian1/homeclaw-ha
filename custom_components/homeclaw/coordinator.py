@@ -47,6 +47,7 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "cognition_activation",
                 "memory_seeds",
                 "standing_intent_preview",
+                "qualification_evidence_v2",
             )
         ):
             integration_health = "version_skew"
@@ -125,12 +126,25 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for item in programs.get("items", []):
                 program_id = item.get("id") or item.get("program_id")
                 item["readiness"] = readiness_by_program.get(program_id)
+            review_queues = await asyncio.gather(
+                *(
+                    self.client.get(
+                        f"/v1/qualification/campaigns/{item['id']}/review-queue?limit=50"
+                    )
+                    for item in qualification_campaigns.get("items", [])
+                    if item.get("status") in {"collecting", "coverage_complete", "review_ready"}
+                )
+            )
+            qualification_review_queue = [
+                unit for queue in review_queues for unit in queue.get("items", [])
+            ]
         except ClientResponseError as exc:
             if exc.status != 404:
                 raise UpdateFailed(str(exc)) from exc
             activation_funnel = {"totals": {}, "by_status": []}
             memory_seeds = {"items": []}
             memory_reviews = {"items": []}
+            qualification_review_queue = []
             integration_health = "version_skew"
         journal: dict[str, Any] = {"items": []}
         if features.get("house_journal") is True:
@@ -174,6 +188,7 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "api_version": meta.get("api_version", "unknown"),
             "qualification_checks": qualification_checks.get("items", []),
             "qualification_campaigns": qualification_campaigns.get("items", []),
+            "qualification_review_queue": qualification_review_queue,
             "activation_funnel": activation_funnel,
             "memory_seeds": memory_seeds.get("items", []),
             "memory_reviews": memory_reviews.get("items", []),

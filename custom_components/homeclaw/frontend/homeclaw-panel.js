@@ -86,6 +86,27 @@ class HomeclawPanel extends HTMLElement {
     }
   }
 
+  async _reviewQualification(evidenceId, label, eligibility) {
+    if (!this._hass || this._loading) return;
+    this._loading = true;
+    this.render();
+    try {
+      const payload = {
+        evidence_id: evidenceId,
+        eligibility,
+        reason: eligibility === "excluded" ? "Resident excluded this opportunity." : "Resident semantic review.",
+      };
+      if (label) payload.label = label;
+      await this._hass.callService("homeclaw", "review_qualification_evidence", payload);
+      this._loading = false;
+      await this._load();
+    } catch (error) {
+      this._loading = false;
+      this._error = String(error?.message || error);
+      this.render();
+    }
+  }
+
   async _previewIntent(event) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -212,6 +233,13 @@ class HomeclawPanel extends HTMLElement {
         this._reviewMemory(button.dataset.candidateId, button.dataset.memoryReview),
       );
     });
+    this.shadowRoot.querySelectorAll("button[data-qualification-review]").forEach((button) => {
+      button.addEventListener("click", () => this._reviewQualification(
+        button.dataset.evidenceId,
+        button.dataset.qualificationReview || null,
+        button.dataset.eligibility,
+      ));
+    });
   }
 
   _renderView(data) {
@@ -223,9 +251,9 @@ class HomeclawPanel extends HTMLElement {
       cognition: () => `${listSection("Cognition Packs", data.cognition_programs, programItem)}${listSection("Recent runs", data.cognition_runs, cognitionRunItem)}`,
       memory: () => `${listSection("Approved household memory", data.memory_claims, memoryItem)}${listSection("Candidate provenance seeds", data.memory_seeds, genericItem)}${listSection("Consolidation reviews", data.memory_reviews, genericItem)}`,
       intentions: () => this._intentions(data),
-      review: () => `${listSection("Unreviewed cognition samples", (data.cognition_runs || []).filter((item) => item.qualification_eligible && !item.review_kind), cognitionRunItem)}${memoryReviewSection(data.memory_candidates)}${listSection("Procedural proposals", data.procedural_proposals, genericItem)}`,
+      review: () => `${listSection("Independent qualification opportunities", data.qualification_review_queue, qualificationReviewItem)}${listSection("Legacy cognition samples", (data.cognition_runs || []).filter((item) => item.qualification_eligible && !item.review_kind), cognitionRunItem)}${memoryReviewSection(data.memory_candidates)}${listSection("Procedural proposals", data.procedural_proposals, genericItem)}`,
       settings: () => listSection("Resident profiles", data.resident_profiles, genericItem),
-      operations: () => `${this._operations(data)}${listSection("Continuous qualification", data.qualification_campaigns, qualificationItem)}${listSection("Production checks", data.qualification_checks, qualificationItem)}${listSection("Controlled experiments", data.experiments, genericItem)}`,
+      operations: () => `${this._operations(data)}${listSection("Evidence qualification", data.qualification_campaigns, qualificationItem)}${listSection("Production checks", data.qualification_checks, qualificationItem)}${listSection("Controlled experiments", data.experiments, genericItem)}`,
     };
     return (views[this._view] || views.now)();
   }
@@ -328,11 +356,27 @@ function cognitionRunItem(item) {
 function qualificationItem(item) {
   const identity = item.release_identity || {};
   const detail = item.evidence || {};
+  const evidence = item.eligible_units == null
+    ? stringify(detail)
+    : `${item.eligible_units} eligible · precision ${item.point_precision ?? "—"} · Wilson ${item.precision_wilson90 ?? "—"} · coverage ${item.coverage_complete ? "complete" : "incomplete"}`;
+  const blockers = Array.isArray(item.gate_blockers) && item.gate_blockers.length
+    ? ` · blocked: ${item.gate_blockers.join(", ")}`
+    : "";
   return row(
-    item.check_id || "Qualification check",
-    `${item.status || "unknown"} · ${stringify(detail)}`,
-    `${item.category || "check"} · ${identity.model_name || identity.release || identity.schema || "current release"} · ${formatTime(item.completed_at || item.started_at)}`,
+    item.scope || item.check_id || "Qualification check",
+    `${item.status || "unknown"} · ${evidence}${blockers}`,
+    `${item.candidate_hash ? `candidate ${item.candidate_hash.slice(0, 12)}` : item.category || "check"} · ${identity.model_name || identity.release || identity.schema || "current release"} · ${formatTime(item.completed_at || item.created_at)}`,
   );
+}
+
+function qualificationReviewItem(item) {
+  const labels = [
+    ["true_positive", "TP"], ["false_positive", "FP"],
+    ["true_negative", "TN"], ["false_negative", "FN"],
+    ["correct_abstain", "Correct abstain"], ["incorrect_abstain", "Incorrect abstain"],
+  ];
+  const buttons = labels.map(([label, title]) => `<button data-evidence-id="${escapeHtml(item.id)}" data-qualification-review="${label}" data-eligibility="eligible">${title}</button>`).join("");
+  return `<article class="row review-row"><div><strong>${escapeHtml(item.opportunity_kind || "Qualification opportunity")}</strong><p>${escapeHtml(item.assessment || item.terminal_outcome || "")}</p><small>${escapeHtml(item.provenance || "unknown provenance")} · ${escapeHtml(item.context_status || "unknown context")} · ${formatTime(item.occurred_at)}</small></div><div class="review-actions">${buttons}<button data-evidence-id="${escapeHtml(item.id)}" data-qualification-review="" data-eligibility="excluded">Exclude</button></div></article>`;
 }
 
 function memoryItem(item) {

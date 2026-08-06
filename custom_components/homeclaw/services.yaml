@@ -142,6 +142,32 @@ set_cognition_program:
     owner_confirmation:
       required: true
       selector: {boolean: {}}
+review_qualification_evidence:
+  description: Label or exclude one independent qualification opportunity.
+  fields:
+    evidence_id:
+      required: true
+      selector: {text: {}}
+    label:
+      selector:
+        select:
+          options:
+            - true_positive
+            - false_positive
+            - true_negative
+            - false_negative
+            - correct_abstain
+            - incorrect_abstain
+    eligibility:
+      required: true
+      selector:
+        select:
+          options:
+            - eligible
+            - excluded
+    reason:
+      required: true
+      selector: {text: {multiline: true}}
 execute_capability:
   fields:
     request:

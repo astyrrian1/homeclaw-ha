@@ -136,6 +136,13 @@ async def async_setup_entry(hass, entry) -> bool:
                 {key: value for key, value in call.data.items() if key != "program_id"},
                 actor=actor,
             )
+        elif call.service == "review_qualification_evidence":
+            evidence_id = call.data["evidence_id"]
+            await client.post(
+                f"/v1/qualification/evidence/{evidence_id}/review",
+                {key: value for key, value in call.data.items() if key != "evidence_id"},
+                actor=actor,
+            )
 
     async def execute_capability(call: ServiceCall):
         return await executor.execute(dict(call.data["request"]))
@@ -220,6 +227,23 @@ async def async_setup_entry(hass, entry) -> bool:
                 vol.Required("owner_confirmation"): cv.boolean,
             }
         ),
+        "review_qualification_evidence": vol.Schema(
+            {
+                vol.Required("evidence_id"): cv.string,
+                vol.Optional("label"): vol.In(
+                    [
+                        "true_positive",
+                        "false_positive",
+                        "true_negative",
+                        "false_negative",
+                        "correct_abstain",
+                        "incorrect_abstain",
+                    ]
+                ),
+                vol.Required("eligibility"): vol.In(["eligible", "excluded"]),
+                vol.Required("reason"): cv.string,
+            }
+        ),
     }
     for service, schema in service_schemas.items():
         hass.services.async_register(DOMAIN, service, handle_service, schema=schema)
@@ -251,6 +275,7 @@ async def async_unload_entry(hass, entry) -> bool:
                 "create_standing_intent",
                 "cancel_standing_intent",
                 "set_cognition_program",
+                "review_qualification_evidence",
                 "execute_capability",
             ):
                 hass.services.async_remove(DOMAIN, service)

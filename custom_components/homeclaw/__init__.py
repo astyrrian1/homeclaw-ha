@@ -49,6 +49,7 @@ async def async_setup_entry(hass, entry) -> bool:
     await async_register_homeclaw_panel(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     executor = CapabilityExecutor(hass, entry, coordinator)
+    await executor.async_report_installations()
 
     async def handle_notification_action(event) -> None:
         action = event.data.get("action")

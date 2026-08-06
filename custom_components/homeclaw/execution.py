@@ -17,6 +17,7 @@ from .const import (
     CONF_EXECUTION_SECRET,
     CONF_HOUSE_MODE_ENTITY,
 )
+from .mapping_installation import mapping_installation_records
 
 CAPABILITY_RISK = {
     "ambient_lighting": "R1",
@@ -44,6 +45,29 @@ class CapabilityExecutor:
         self._coordinator = coordinator
         self._seen_nonces: set[str] = set()
         self._last_execution: dict[tuple[str, str], datetime] = {}
+
+    async def async_report_installations(self) -> None:
+        mappings = self._entry.options.get(CONF_CAPABILITY_MAPPINGS, {})
+        if not isinstance(mappings, dict):
+            raise HomeAssistantError("capability mappings must be an object")
+        available_entities = {state.entity_id for state in self._hass.states.async_all()}
+        records = mapping_installation_records(
+            mappings,
+            available_entities=available_entities,
+        )
+        for record in records:
+            path = (
+                f"/v1/capability-mappings/{record['capability']}/"
+                f"{record['semantic_role']}/{record['mapping_version']}/installation"
+            )
+            await self._coordinator.client.post(
+                path,
+                {
+                    "mapping_sha256": record["mapping_sha256"],
+                    "evidence_sha256": record["evidence_sha256"],
+                },
+                actor=self._coordinator.transport_actor,
+            )
 
     async def execute(self, request: dict[str, Any]) -> dict[str, Any]:
         self._validate_envelope(request)
@@ -126,9 +150,10 @@ class CapabilityExecutor:
             "expires_at",
             "confirmed",
             "mapping_version",
+            "mapping_sha256",
             "signature",
         }
-        if set(request) != expected or request.get("schema_version") != "2":
+        if set(request) != expected or request.get("schema_version") != "3":
             raise HomeAssistantError("malformed capability envelope")
         secret = str(self._entry.options.get(CONF_EXECUTION_SECRET, ""))
         if len(secret) < 32 or not _verify_signature(request, secret.encode()):
@@ -173,6 +198,9 @@ class CapabilityExecutor:
         mapping_version = str(mapping.get("mapping_version", ""))
         if not mapping_version or request["mapping_version"] != mapping_version:
             raise HomeAssistantError("capability mapping version does not match")
+        mapping_sha256 = str(mapping.get("mapping_sha256", ""))
+        if request["mapping_sha256"] != mapping_sha256:
+            raise HomeAssistantError("capability mapping hash does not match")
         if request["confirmed"]:
             if mode not in {"suggest", "bounded_auto"}:
                 raise HomeAssistantError(

@@ -1,4 +1,4 @@
-"""Read-only Homeclaw panel registration and WebSocket boundary."""
+"""Bounded Homeclaw panel registration and read-only preview boundary."""
 
 from __future__ import annotations
 
@@ -38,6 +38,52 @@ def websocket_panel_data(
     connection.send_result(msg["id"], coordinator.data)
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "homeclaw/preview_intent",
+        vol.Required("template_id"): vol.In(
+            [
+                "episode_completion",
+                "source_recovery",
+                "semantic_state_transition",
+                "numeric_threshold",
+            ]
+        ),
+        vol.Required("fields"): dict,
+        vol.Required("delivery_target"): str,
+        vol.Required("cooldown_seconds"): vol.All(int, vol.Range(min=0, max=604800)),
+        vol.Required("expires_at"): str,
+    }
+)
+@websocket_api.async_response
+async def websocket_preview_intent(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Preview a closed-template intent without persisting or authorizing it."""
+    coordinators = hass.data.get(DOMAIN, {})
+    if not coordinators:
+        connection.send_error(msg["id"], "not_ready", "Homeclaw is not ready")
+        return
+    coordinator = next(iter(coordinators.values()))
+    try:
+        result = await coordinator.client.post(
+            "/v1/standing-intents/preview",
+            {
+                "template_id": msg["template_id"],
+                "fields": msg["fields"],
+                "delivery_target": msg["delivery_target"],
+                "cooldown_seconds": msg["cooldown_seconds"],
+                "expires_at": msg["expires_at"],
+            },
+        )
+    except Exception as exc:
+        connection.send_error(msg["id"], "preview_failed", str(exc))
+        return
+    connection.send_result(msg["id"], result)
+
+
 async def async_register_homeclaw_panel(hass: HomeAssistant) -> None:
     """Register one local-only resident panel for this HA process."""
     if not hass.data.get(DATA_PANEL_STATIC_REGISTERED):
@@ -49,6 +95,7 @@ async def async_register_homeclaw_panel(hass: HomeAssistant) -> None:
 
     if not hass.data.get(DATA_PANEL_WEBSOCKET_REGISTERED):
         websocket_api.async_register_command(hass, websocket_panel_data)
+        websocket_api.async_register_command(hass, websocket_preview_intent)
         hass.data[DATA_PANEL_WEBSOCKET_REGISTERED] = True
 
     if not hass.data.get(DATA_PANEL_REGISTERED):

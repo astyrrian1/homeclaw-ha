@@ -88,11 +88,18 @@ correct_memory:
       required: true
       selector: {text: {multiline: true}}
 create_standing_intent:
+  description: Confirm a code-owned, previously previewed notification-only intention.
   fields:
-    description:
+    template_id:
       required: true
-      selector: {text: {multiline: true}}
-    trigger_predicates:
+      selector:
+        select:
+          options:
+            - episode_completion
+            - source_recovery
+            - semantic_state_transition
+            - numeric_threshold
+    fields:
       required: true
       selector: {object: {}}
     delivery_target:
@@ -103,9 +110,9 @@ create_standing_intent:
     expires_at:
       required: true
       selector: {datetime: {}}
-    resident_confirmation:
+    preview_sha256:
       required: true
-      selector: {boolean: {}}
+      selector: {text: {}}
 cancel_standing_intent:
   fields:
     intent_id:

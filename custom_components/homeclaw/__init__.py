@@ -118,7 +118,11 @@ async def async_setup_entry(hass, entry) -> bool:
                 actor=actor,
             )
         elif call.service == "create_standing_intent":
-            await client.post("/v1/standing-intents", dict(call.data), actor=actor)
+            await client.post(
+                "/v1/standing-intents/confirm",
+                dict(call.data),
+                actor=actor,
+            )
         elif call.service == "cancel_standing_intent":
             intent_id = call.data["intent_id"]
             await client.delete(
@@ -186,14 +190,21 @@ async def async_setup_entry(hass, entry) -> bool:
         ),
         "create_standing_intent": vol.Schema(
             {
-                vol.Required("description"): cv.string,
-                vol.Required("trigger_predicates"): dict,
+                vol.Required("template_id"): vol.In(
+                    [
+                        "episode_completion",
+                        "source_recovery",
+                        "semantic_state_transition",
+                        "numeric_threshold",
+                    ]
+                ),
+                vol.Required("fields"): dict,
                 vol.Required("delivery_target"): cv.string,
                 vol.Optional("cooldown_seconds", default=0): vol.All(
                     vol.Coerce(int), vol.Range(min=0, max=604800)
                 ),
                 vol.Required("expires_at"): cv.string,
-                vol.Required("resident_confirmation"): cv.boolean,
+                vol.Required("preview_sha256"): vol.Match(r"^[a-f0-9]{64}$"),
             }
         ),
         "cancel_standing_intent": vol.Schema(

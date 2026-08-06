@@ -60,6 +60,39 @@ class GetStandingIntentsTool(llm.Tool):
         return await coordinator.client.get("/v1/standing-intents")
 
 
+class PreviewStandingIntentTool(llm.Tool):
+    name = "PreviewHomeclawStandingIntent"
+    description = (
+        "Preview a notification-only intention from a closed Homeclaw template. "
+        "This does not create the intention; the resident must confirm the returned "
+        "preview hash in the Homeclaw panel or typed HA action."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Required("template_id"): vol.In(
+                [
+                    "episode_completion",
+                    "source_recovery",
+                    "semantic_state_transition",
+                    "numeric_threshold",
+                ]
+            ),
+            vol.Required("fields"): dict,
+            vol.Required("delivery_target"): str,
+            vol.Optional("cooldown_seconds", default=0): vol.All(int, vol.Range(min=0, max=604800)),
+            vol.Required("expires_at"): str,
+        }
+    )
+
+    async def async_call(self, hass, tool_input: ToolInput, llm_context: LLMContext):
+        del llm_context
+        coordinator = next(iter(hass.data[DOMAIN].values()))
+        return await coordinator.client.post(
+            "/v1/standing-intents/preview",
+            dict(tool_input.tool_args),
+        )
+
+
 class ReadHouseJournalTool(llm.Tool):
     name = "ReadHomeclawHouseJournal"
     description = (
@@ -108,11 +141,13 @@ def async_get_tools(
             ExplainBeliefsTool(),
             GetWorldStateTool(),
             GetStandingIntentsTool(),
+            PreviewStandingIntentTool(),
             ReadHouseJournalTool(),
         ],
         prompt=(
             "Use Homeclaw tools only to query shared household evidence and explanations. "
             "House Journal text is derived interpretation, so retain its evidence lineage. "
-            "These tools do not expose device control."
+            "An intention preview is inert until the resident confirms it through Home "
+            "Assistant. These tools do not expose device control."
         ),
     )

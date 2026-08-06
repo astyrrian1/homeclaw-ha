@@ -40,7 +40,14 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         features = meta.get("features", {})
         if not all(
             features.get(name) is True
-            for name in ("house_journal", "signal_summaries", "audit_funnel")
+            for name in (
+                "house_journal",
+                "signal_summaries",
+                "audit_funnel",
+                "cognition_activation",
+                "memory_seeds",
+                "standing_intent_preview",
+            )
         ):
             integration_health = "version_skew"
         try:
@@ -97,6 +104,34 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         except Exception as exc:
             raise UpdateFailed(str(exc)) from exc
+        try:
+            activation_funnel, memory_seeds, memory_reviews = await asyncio.gather(
+                self.client.get("/v1/activation/funnel"),
+                self.client.get("/v1/memory/seeds?limit=50"),
+                self.client.get("/v1/memory/reviews?limit=50"),
+            )
+            program_readiness = await asyncio.gather(
+                *(
+                    self.client.get(
+                        f"/v1/cognition/programs/{item.get('id') or item.get('program_id')}"
+                        "/readiness"
+                    )
+                    for item in programs.get("items", [])
+                )
+            )
+            readiness_by_program = {
+                item["program_id"]: item.get("readiness") for item in program_readiness
+            }
+            for item in programs.get("items", []):
+                program_id = item.get("id") or item.get("program_id")
+                item["readiness"] = readiness_by_program.get(program_id)
+        except ClientResponseError as exc:
+            if exc.status != 404:
+                raise UpdateFailed(str(exc)) from exc
+            activation_funnel = {"totals": {}, "by_status": []}
+            memory_seeds = {"items": []}
+            memory_reviews = {"items": []}
+            integration_health = "version_skew"
         journal: dict[str, Any] = {"items": []}
         if features.get("house_journal") is True:
             try:
@@ -139,6 +174,9 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "api_version": meta.get("api_version", "unknown"),
             "qualification_checks": qualification_checks.get("items", []),
             "qualification_campaigns": qualification_campaigns.get("items", []),
+            "activation_funnel": activation_funnel,
+            "memory_seeds": memory_seeds.get("items", []),
+            "memory_reviews": memory_reviews.get("items", []),
         }
 
     async def async_deliver_notification(self, item: dict[str, Any]) -> None:
@@ -168,18 +206,28 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             ],
                         }
                     )
+                service_payload = {
+                    "title": item.get("title", "Homeclaw"),
+                    "message": item.get("body", ""),
+                }
+                if service.startswith("mobile_app_"):
+                    service_payload["data"] = notification_data
                 await self.hass.services.async_call(
                     domain,
                     service,
-                    {
-                        "title": item.get("title", "Homeclaw"),
-                        "message": item.get("body", ""),
-                        "data": notification_data,
-                    },
+                    service_payload,
                     blocking=False,
                 )
                 accepted.append(value)
-            channel = "home_assistant_event" if not accepted else "home_assistant_notify"
+            channel = (
+                "home_assistant_event"
+                if not accepted
+                else (
+                    "signal"
+                    if all(value == "notify.signal" for value in accepted)
+                    else "home_assistant_notify"
+                )
+            )
             reference = ",".join(accepted) if accepted else f"event:{item_id}"
             await self.client.post(
                 f"/v1/notifications/{item_id}/accept",

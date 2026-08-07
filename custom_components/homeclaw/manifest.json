@@ -3,10 +3,11 @@
   "name": "Homeclaw",
   "codeowners": [],
   "config_flow": true,
-  "documentation": "https://homeclaw.lan/docs",
+  "documentation": "https://github.com/astyrrian1/homeclaw-ha",
   "dependencies": ["frontend", "http", "websocket_api"],
   "integration_type": "hub",
   "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/astyrrian1/homeclaw-ha/issues",
   "requirements": [],
   "single_config_entry": true,
   "version": "0.12.0"

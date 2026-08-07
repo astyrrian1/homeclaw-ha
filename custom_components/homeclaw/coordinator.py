@@ -48,6 +48,7 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "memory_seeds",
                 "standing_intent_preview",
                 "qualification_evidence_v2",
+                "release_certified_auto_activation",
             )
         ):
             integration_health = "version_skew"
@@ -75,6 +76,8 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 experiments,
                 qualification_checks,
                 qualification_campaigns,
+                auto_activation,
+                release_certifications,
             ) = await asyncio.gather(
                 self.client.get("/v1/status"),
                 self.client.get("/v1/timeline?limit=20"),
@@ -102,6 +105,8 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.client.get("/v1/experiments?limit=50"),
                 self.client.get("/v1/qualification/checks?limit=100"),
                 self.client.get("/v1/qualification/campaigns?limit=100"),
+                self.client.get("/v1/cognition/auto-activation"),
+                self.client.get("/v1/cognition/certifications?limit=100"),
             )
         except Exception as exc:
             raise UpdateFailed(str(exc)) from exc
@@ -189,6 +194,8 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "qualification_checks": qualification_checks.get("items", []),
             "qualification_campaigns": qualification_campaigns.get("items", []),
             "qualification_review_queue": qualification_review_queue,
+            "cognition_auto_activation": auto_activation,
+            "release_certifications": release_certifications.get("items", []),
             "activation_funnel": activation_funnel,
             "memory_seeds": memory_seeds.get("items", []),
             "memory_reviews": memory_reviews.get("items", []),

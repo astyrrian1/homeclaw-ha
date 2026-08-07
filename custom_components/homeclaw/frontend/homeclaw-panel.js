@@ -271,12 +271,12 @@ class HomeclawPanel extends HTMLElement {
       journal: () => listSection("House Journal", data.journal_entries, journalItem),
       evidence: () => listSection("Recent evidence", data.timeline, genericItem),
       insights: () => `${listSection("Insights and proposals", data.events, genericItem)}${listSection("Numeric forecasts", data.forecasts, genericItem)}`,
-      cognition: () => `${listSection("Cognition Packs", data.cognition_programs, programItem)}${listSection("Recent runs", data.cognition_runs, cognitionRunItem)}`,
+      cognition: () => `${listSection("Cognition Packs", data.cognition_programs, programItem)}${listSection("Release certificates", data.release_certifications, certificationItem)}${listSection("Recent runs", data.cognition_runs, cognitionRunItem)}`,
       memory: () => `${listSection("Approved household memory", data.memory_claims, memoryItem)}${listSection("Candidate provenance seeds", data.memory_seeds, genericItem)}${listSection("Consolidation reviews", data.memory_reviews, genericItem)}`,
       intentions: () => this._intentions(data),
       review: () => `${listSection("Independent qualification opportunities", data.qualification_review_queue, qualificationReviewItem)}${listSection("Legacy cognition samples", (data.cognition_runs || []).filter((item) => item.qualification_eligible && !item.review_kind), cognitionRunItem)}${memoryReviewSection(data.memory_candidates)}${listSection("Procedural proposals", data.procedural_proposals, genericItem)}`,
       settings: () => listSection("Resident profiles", data.resident_profiles, genericItem),
-      operations: () => `${this._operations(data)}${listSection("Evidence qualification", data.qualification_campaigns, qualificationItem)}${listSection("Production checks", data.qualification_checks, qualificationItem)}${listSection("Controlled experiments", data.experiments, genericItem)}`,
+      operations: () => `${this._operations(data)}${listSection("Automatic cognition activation", data.cognition_auto_activation?.items || [], activationItem)}${listSection("Field quality monitoring", data.qualification_campaigns, qualificationItem)}${listSection("Production checks", data.qualification_checks, qualificationItem)}${listSection("Controlled experiments", data.experiments, genericItem)}`,
     };
     return (views[this._view] || views.now)();
   }
@@ -359,7 +359,22 @@ function journalItem(item) {
 function programItem(item) {
   const readiness = item.readiness?.status || "not evaluated";
   const reasons = (item.readiness?.reason_codes || []).join(", ");
-  return row(item.program_id || item.id || "Pack", `${item.mode || "audit"} · ${item.sensitivity || "normal"} · readiness ${readiness}${reasons ? ` (${reasons})` : ""}`, item.version || item.last_evaluated_at);
+  const runtime = item.runtime_state || item.mode || "audit";
+  const certification = item.certification_status || "uncertified";
+  return row(item.program_id || item.id || "Pack", `${runtime} · ${item.sensitivity || "normal"} · certification ${certification} · readiness ${readiness}${reasons ? ` (${reasons})` : ""}`, item.version || item.last_evaluated_at);
+}
+
+function certificationItem(item) {
+  const blockers = Array.isArray(item.blockers) && item.blockers.length
+    ? ` · ${item.blockers.join(", ")}`
+    : "";
+  return row(item.program_id || "Pack certificate", `${item.status || "unknown"}${blockers}`, item.candidate_hash ? `candidate ${item.candidate_hash.slice(0, 12)} · ${formatTime(item.certified_at || item.created_at)}` : "no candidate");
+}
+
+function activationItem(item) {
+  const hold = item.manual_hold ? " · manual hold" : "";
+  const fallback = item.fallback_reason ? ` · ${item.fallback_reason}` : "";
+  return row(item.program_id || "Pack", `${item.runtime_state || "audit"}${hold}${fallback}`, item.certification_status || "uncertified");
 }
 
 function cognitionRunItem(item) {

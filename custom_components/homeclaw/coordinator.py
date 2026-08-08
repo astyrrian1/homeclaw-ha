@@ -120,7 +120,12 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as exc:
             raise UpdateFailed(str(exc)) from exc
         try:
-            activation_funnel, memory_seeds, memory_reviews, memory_backfills = await asyncio.gather(
+            (
+                activation_funnel,
+                memory_seeds,
+                memory_reviews,
+                memory_backfills,
+            ) = await asyncio.gather(
                 self.client.get("/v1/activation/funnel"),
                 self.client.get("/v1/memory/seeds?limit=50"),
                 self.client.get("/v1/memory/reviews?limit=50"),
@@ -147,7 +152,8 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         f"/v1/qualification/campaigns/{item['id']}/review-queue?limit=50"
                     )
                     for item in qualification_campaigns.get("items", [])
-                    if item.get("status") in {"collecting", "coverage_complete", "review_ready"}
+                    if item.get("status")
+                    in {"collecting", "coverage_complete", "review_ready"}
                 )
             )
             qualification_review_queue = [
@@ -170,15 +176,21 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if exc.status != 404:
                     raise UpdateFailed(str(exc)) from exc
                 integration_health = "version_skew"
-        events = [{**item, "record_type": "insight"} for item in insights.get("items", [])] + [
-            {**item, "record_type": "action_proposal"} for item in proposals.get("items", [])
+        events = [
+            {**item, "record_type": "insight"} for item in insights.get("items", [])
+        ] + [
+            {**item, "record_type": "action_proposal"}
+            for item in proposals.get("items", [])
         ]
         pending_notifications = [
-            {**item, "record_type": "notification"} for item in notifications.get("items", [])
+            {**item, "record_type": "notification"}
+            for item in notifications.get("items", [])
         ]
         events.extend(pending_notifications)
         pending_candidates = [
-            item for item in candidates.get("items", []) if item.get("status") == "pending"
+            item
+            for item in candidates.get("items", [])
+            if item.get("status") == "pending"
         ]
         return {
             **status,
@@ -224,7 +236,9 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for value in services:
                 domain, separator, service = value.partition(".")
                 if separator != "." or domain != "notify" or not service:
-                    raise ValueError("Homeclaw notification services must use notify.<service>")
+                    raise ValueError(
+                        "Homeclaw notification services must use notify.<service>"
+                    )
                 notification_data = {
                     "homeclaw_delivery_id": item_id,
                     "homeclaw_record_type": item.get("record_type"),

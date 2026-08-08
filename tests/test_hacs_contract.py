@@ -32,7 +32,9 @@ class HacsReleaseContractTest(unittest.TestCase):
         )
 
     def test_panel_exposes_v13_usefulness_contract(self) -> None:
-        coordinator = (ROOT / "custom_components" / "homeclaw" / "coordinator.py").read_text()
+        coordinator = (
+            ROOT / "custom_components" / "homeclaw" / "coordinator.py"
+        ).read_text()
         panel = (
             ROOT / "custom_components" / "homeclaw" / "frontend" / "homeclaw-panel.js"
         ).read_text()

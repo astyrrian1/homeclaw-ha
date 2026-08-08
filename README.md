@@ -15,6 +15,11 @@ The integration talks only to the Homeclaw API URL configured in Home
 Assistant. It does not contain inference models, household configuration,
 credentials, or a cloud fallback.
 
+Version 0.13 presents coherent situations, value-added conclusions, active
+beliefs, reflection objectives, and evidence-qualified memory. Detector-only
+events are collapsed by default, while missing context and zero-yield memory
+reasons remain visible under Operations and Memory.
+
 ## Release contract
 
 The integration version is declared in

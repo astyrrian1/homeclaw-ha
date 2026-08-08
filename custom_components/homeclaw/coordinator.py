@@ -49,6 +49,9 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "standing_intent_preview",
                 "qualification_evidence_v2",
                 "release_certified_auto_activation",
+                "coherent_situations",
+                "cognition_value_atoms",
+                "reflection_objectives",
             )
         ):
             integration_health = "version_skew"
@@ -78,6 +81,9 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 qualification_campaigns,
                 auto_activation,
                 release_certifications,
+                situations,
+                value_funnel,
+                reflections,
             ) = await asyncio.gather(
                 self.client.get("/v1/status"),
                 self.client.get("/v1/timeline?limit=20"),
@@ -107,14 +113,18 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.client.get("/v1/qualification/campaigns?limit=100"),
                 self.client.get("/v1/cognition/auto-activation"),
                 self.client.get("/v1/cognition/certifications?limit=100"),
+                self.client.get("/v1/situations?limit=100"),
+                self.client.get("/v1/cognition/value-funnel"),
+                self.client.get("/v1/reflections?limit=100"),
             )
         except Exception as exc:
             raise UpdateFailed(str(exc)) from exc
         try:
-            activation_funnel, memory_seeds, memory_reviews = await asyncio.gather(
+            activation_funnel, memory_seeds, memory_reviews, memory_backfills = await asyncio.gather(
                 self.client.get("/v1/activation/funnel"),
                 self.client.get("/v1/memory/seeds?limit=50"),
                 self.client.get("/v1/memory/reviews?limit=50"),
+                self.client.get("/v1/memory/backfills?limit=20"),
             )
             program_readiness = await asyncio.gather(
                 *(
@@ -149,6 +159,7 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             activation_funnel = {"totals": {}, "by_status": []}
             memory_seeds = {"items": []}
             memory_reviews = {"items": []}
+            memory_backfills = {"items": []}
             qualification_review_queue = []
             integration_health = "version_skew"
         journal: dict[str, Any] = {"items": []}
@@ -199,6 +210,10 @@ class HomeclawCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "activation_funnel": activation_funnel,
             "memory_seeds": memory_seeds.get("items", []),
             "memory_reviews": memory_reviews.get("items", []),
+            "memory_backfills": memory_backfills.get("items", []),
+            "situations": situations.get("items", []),
+            "cognition_value_funnel": value_funnel,
+            "reflections": reflections.get("items", []),
         }
 
     async def async_deliver_notification(self, item: dict[str, Any]) -> None:

@@ -268,11 +268,11 @@ class HomeclawPanel extends HTMLElement {
   _renderView(data) {
     const views = {
       now: () => this._now(data),
-      journal: () => listSection("House Journal", data.journal_entries, journalItem),
+      journal: () => this._journal(data),
       evidence: () => listSection("Recent evidence", data.timeline, genericItem),
-      insights: () => `${listSection("Insights and proposals", data.events, genericItem)}${listSection("Numeric forecasts", data.forecasts, genericItem)}`,
+      insights: () => this._insights(data),
       cognition: () => `${listSection("Cognition Packs", data.cognition_programs, programItem)}${listSection("Release certificates", data.release_certifications, certificationItem)}${listSection("Recent runs", data.cognition_runs, cognitionRunItem)}`,
-      memory: () => `${listSection("Approved household memory", data.memory_claims, memoryItem)}${listSection("Candidate provenance seeds", data.memory_seeds, genericItem)}${listSection("Consolidation reviews", data.memory_reviews, genericItem)}`,
+      memory: () => this._memory(data),
       intentions: () => this._intentions(data),
       review: () => `${listSection("Independent qualification opportunities", data.qualification_review_queue, qualificationReviewItem)}${listSection("Legacy cognition samples", (data.cognition_runs || []).filter((item) => item.qualification_eligible && !item.review_kind), cognitionRunItem)}${memoryReviewSection(data.memory_candidates)}${listSection("Procedural proposals", data.procedural_proposals, genericItem)}`,
       settings: () => listSection("Resident profiles", data.resident_profiles, genericItem),
@@ -286,6 +286,10 @@ class HomeclawPanel extends HTMLElement {
     const sourceHealth = Array.isArray(data.world?.source_health)
       ? data.world.source_health
       : Object.entries(data.world?.source_health || {}).map(([source, value]) => ({ source, value }));
+    const conclusions = (data.situations || []).filter((item) => item.lifecycle === "open");
+    const additions = (data.cognition_runs || []).filter((item) => item.output_kind === "value_added");
+    const blindSpots = sourceHealth.filter((item) => (item.status || item.value) !== "good")
+      .concat((data.cognition_programs || []).filter((item) => !["ready", "not_applicable"].includes(item.readiness?.status)));
     return `
       <section class="metrics">
         ${metric("Authority", data.authority_mode || "unknown")}
@@ -295,13 +299,51 @@ class HomeclawPanel extends HTMLElement {
         ${metric("Active episode", data.active_episode || "none")}
         ${metric("Decision latency", data.decision_latency == null ? "—" : `${data.decision_latency} s`)}
       </section>
-      ${listSection("Current conditions", signals, signalItem)}
+      ${listSection("Active beliefs", data.beliefs, beliefItem)}
+      ${listSection("Meaningful current situations", conclusions, situationItem)}
+      ${listSection("What Homeclaw added", additions, cognitionRunItem)}
+      ${listSection("Blind spots", blindSpots, genericItem)}
+      ${listSection("Current conditions", signals.slice(0, 25), signalItem)}
       ${listSection("Source health", sourceHealth, genericItem)}`;
+  }
+
+  _journal(data) {
+    const materialEntries = (data.journal_entries || []).filter((item) =>
+      !["observation", "no_finding"].includes(item.entry_type),
+    );
+    return `${listSection("Coherent situations", data.situations, situationItem)}${listSection("Material conclusions and revisions", materialEntries, journalItem)}`;
+  }
+
+  _insights(data) {
+    const meaningful = (data.events || []).filter((item) =>
+      item.record_type === "action_proposal" || item.significance || item.output_kind === "value_added",
+    );
+    return `${listSection("Value-added insights and advisory proposals", meaningful, insightItem)}${listSection("Numeric forecasts", data.forecasts, genericItem)}`;
+  }
+
+  _memory(data) {
+    const automatic = (data.memory_claims || []).filter((item) =>
+      item.approved_by === "automatic_physical_gate",
+    );
+    const reviewed = (data.memory_claims || []).filter((item) =>
+      item.approved_by !== "automatic_physical_gate",
+    );
+    const zeroYield = (data.memory_seeds || []).filter((item) =>
+      item.zero_yield_reason || (item.gate_reasons || []).length,
+    );
+    return `${listSection("Automatically qualified memory", automatic, memoryItem)}${listSection("Reviewed household memory", reviewed, memoryItem)}${listSection("Memory candidates and provenance", data.memory_seeds, memorySeedItem)}${listSection("Why memory did not qualify", zeroYield, memorySeedItem)}${listSection("90-day usefulness backfill", data.memory_backfills, backfillItem)}${listSection("Consolidation reviews", data.memory_reviews, genericItem)}`;
   }
 
   _operations(data) {
     const activation = data.activation_funnel || {};
     const totals = activation.by_status || {};
+    const outputs = data.cognition_value_funnel?.by_output_kind || {};
+    const totalOutputs = data.cognition_value_funnel?.total || 0;
+    const detectorRate = totalOutputs
+      ? `${Math.round(1000 * (outputs.detector_only || 0) / totalOutputs) / 10}%`
+      : "—";
+    const memoryYield = (data.memory_seeds || []).filter((item) => item.candidate_id).length;
+    const reflectionFailures = (data.reflections || []).filter((item) => item.state === "failed").length;
     return `
       <section class="metrics">
         ${metric("Observations", data.observation_count ?? 0)}
@@ -313,8 +355,14 @@ class HomeclawPanel extends HTMLElement {
         ${metric("Projected audit", totals.projected_audit ?? 0)}
         ${metric("Context not ready", totals.context_not_ready ?? 0)}
         ${metric("Citation rejected", totals.citation_rejected ?? 0)}
+        ${metric("Detector-only rate", detectorRate)}
+        ${metric("Reflection failures", reflectionFailures)}
+        ${metric("Memory yield", memoryYield)}
+        ${metric("Realtime cognition route", routeIdentity(data.inference_routes?.realtime))}
+        ${metric("Deep reflection route", routeIdentity(data.inference_routes?.reflection))}
       </section>
-      ${listSection("Situation threads", data.journal_clusters, genericItem)}`;
+      ${listSection("Reflection objectives", data.reflections, reflectionItem)}
+      ${listSection("Situation threads", data.situations, situationItem)}`;
   }
 
   _intentions(data) {
@@ -349,6 +397,77 @@ function signalItem(item) {
   const title = item.subject || item.entity_id || item.signal || "Signal";
   const value = item.value ?? item.state ?? "unknown";
   return row(title, `${value}${item.unit ? ` ${item.unit}` : ""}`, item.quality || item.source);
+}
+
+function beliefItem(item) {
+  return row(
+    `${item.subject || "House"} · ${item.kind || "belief"}`,
+    stringify(item.value),
+    `${item.status || "active"} · confidence ${item.confidence ?? "—"} · expires ${formatTime(item.expires_at)}`,
+  );
+}
+
+function situationItem(item) {
+  const state = item.material_state || {};
+  const detail = [
+    state.magnitude_band && `magnitude ${state.magnitude_band}`,
+    state.direction && `direction ${state.direction}`,
+    (state.correlations || []).length && `${state.correlations.length} correlation(s)`,
+    (state.contradictions || []).length && `${state.contradictions.length} contradiction(s)`,
+  ].filter(Boolean).join(" · ");
+  return row(
+    `${item.condition_type || "situation"} · ${item.semantic_subject || "household"}`,
+    detail || "No material interpretation beyond the detector state.",
+    `${item.lifecycle || "unknown"} · revision ${item.revision ?? 1} · ${formatTime(item.updated_at)}`,
+  );
+}
+
+function routeIdentity(route) {
+  if (!route) return "—";
+  let endpoint = route.endpoint || "unknown endpoint";
+  try {
+    const parsed = new URL(endpoint);
+    endpoint = parsed.port ? `${parsed.hostname}:${parsed.port}` : parsed.hostname;
+  } catch (_error) {
+    // Render non-URL route identifiers verbatim; they remain read-only server state.
+  }
+  return `${endpoint} · ${route.model || "unknown model"}`;
+}
+
+function insightItem(item) {
+  const significance = item.significance || item.why_it_matters || item.explanation || item.body;
+  const response = item.recommended_response ? ` Next: ${item.recommended_response}` : "";
+  const uncertainty = item.uncertainty ? ` Uncertainty: ${item.uncertainty}` : "";
+  return row(
+    item.title || item.kind || item.capability || "Insight",
+    `${significance || ""}${uncertainty}${response}`,
+    `${(item.evidence_ids || []).length} evidence item(s) · confidence ${item.confidence ?? "—"} · ${formatTime(item.created_at)}`,
+  );
+}
+
+function memorySeedItem(item) {
+  const reasons = item.zero_yield_reason || (item.gate_reasons || []).join(", ");
+  return row(
+    `${item.subject || "House"} · ${item.predicate || item.seed_source || "memory seed"}`,
+    stringify(item.typed_value),
+    `${item.seed_source || item.seed_kind || "unknown source"} · ${item.state || "pending"}${reasons ? ` · ${reasons}` : ""}`,
+  );
+}
+
+function backfillItem(item) {
+  return row(
+    `${item.backfill_identity || "backfill"} · ${item.status || "unknown"}`,
+    `${(item.zero_yield_reasons || []).join("; ") || item.error || "Historical analysis is delivery-suppressed."} Situations ${item.situation_count || 0}; seeds ${item.seed_count || 0}; claims ${item.promoted_count || 0}; notifications ${item.notification_count || 0}; proposals ${item.proposal_count || 0}.`,
+    `${formatTime(item.window_start)} – ${formatTime(item.window_end)}`,
+  );
+}
+
+function reflectionItem(item) {
+  return row(
+    item.objective || item.objective_kind || "Reflection",
+    item.operational_failure || stringify(item.due_context),
+    `${item.program_id || "reflection"} · ${item.state || "unknown"} · ${formatTime(item.completed_at || item.created_at)}`,
+  );
 }
 
 function journalItem(item) {
@@ -420,7 +539,7 @@ function qualificationReviewItem(item) {
 }
 
 function memoryItem(item) {
-  return row(`${item.subject || "House"} · ${item.predicate || "memory"}`, stringify(item.value), `${item.status || "active"} · confidence ${item.confidence ?? "—"}`);
+  return row(`${item.subject || "House"} · ${item.predicate || "memory"}`, stringify(item.typed_value ?? item.value), `${item.state || item.status || "active"} · confidence ${item.confidence ?? "—"}`);
 }
 
 function memoryReviewSection(items) {
